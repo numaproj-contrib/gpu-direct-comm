@@ -6,4 +6,5 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: numanetwork-sample
 spec:
-  # TODO(user): Add fields here
+  deviceClassName: gpu.nvidia.com
+  connectionType: direct
