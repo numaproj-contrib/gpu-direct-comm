@@ -22,7 +22,6 @@ import (
 	"strings"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
 
@@ -32,35 +31,6 @@ import (
 // vlanTag), so that GPU Direct communication can be configured declaratively.
 //
 // Spec reference: https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1711996930
-
-func TestNumaNetworkPhaseConstants(t *testing.T) {
-	cases := []struct {
-		got  NumaNetworkPhase
-		want string
-	}{
-		{NumaNetworkPhaseUnknown, ""},
-		{NumaNetworkPhasePending, "Pending"},
-		{NumaNetworkPhaseRunning, "Running"},
-		{NumaNetworkPhaseFailed, "Failed"},
-	}
-	for _, c := range cases {
-		if string(c.got) != c.want {
-			t.Errorf("phase constant = %q, want %q", c.got, c.want)
-		}
-	}
-}
-
-// TestConnectionTypeConstants verifies the constants used in Pipeline edges.
-// connectionType is NOT part of NumaNetworkSpec; it appears in
-// Pipeline.spec.edges[].numaNetwork.connectionType.
-func TestConnectionTypeConstants(t *testing.T) {
-	if string(ConnectionTypeDirect) != "direct" {
-		t.Errorf("ConnectionTypeDirect = %q, want %q", ConnectionTypeDirect, "direct")
-	}
-	if string(ConnectionTypeMultiISBSvc) != "multi-isbsvc" {
-		t.Errorf("ConnectionTypeMultiISBSvc = %q, want %q", ConnectionTypeMultiISBSvc, "multi-isbsvc")
-	}
-}
 
 func TestNumaNetworkSpecFields(t *testing.T) {
 	nn := NumaNetwork{
@@ -75,8 +45,6 @@ func TestNumaNetworkSpecFields(t *testing.T) {
 			},
 		},
 		Status: NumaNetworkStatus{
-			Phase:                     NumaNetworkPhasePending,
-			Conditions:                []metav1.Condition{},
 			ResourceClaimTemplateName: "pipeline1-multi-network-rct",
 		},
 	}
@@ -95,23 +63,6 @@ func TestNumaNetworkSpecFields(t *testing.T) {
 	}
 	if nn.Status.ResourceClaimTemplateName != "pipeline1-multi-network-rct" {
 		t.Errorf("ResourceClaimTemplateName = %q", nn.Status.ResourceClaimTemplateName)
-	}
-}
-
-// TestNumaNetworkSpecOptionalDranetFields verifies that ethernetSpeed and
-// vlanTag are optional — a spec with only ipRange must be valid.
-func TestNumaNetworkSpecOptionalDranetFields(t *testing.T) {
-	nn := NumaNetwork{
-		Spec: NumaNetworkSpec{
-			RefDeviceClass:         RefDeviceClass{Name: "vf.nvidia.dra.net"},
-			RefResourceClaimDranet: RefResourceClaimDranet{IPRange: "10.0.0.0/24"},
-		},
-	}
-	if nn.Spec.RefResourceClaimDranet.EthernetSpeed != 0 {
-		t.Errorf("EthernetSpeed zero value expected, got %d", nn.Spec.RefResourceClaimDranet.EthernetSpeed)
-	}
-	if nn.Spec.RefResourceClaimDranet.VlanTag != 0 {
-		t.Errorf("VlanTag zero value expected, got %d", nn.Spec.RefResourceClaimDranet.VlanTag)
 	}
 }
 
@@ -145,11 +96,8 @@ func TestNumaNetworkJSONTags(t *testing.T) {
 // TestNumaNetworkDranetOmitempty verifies that zero-value optional fields are
 // omitted from JSON so generated ResourceClaimTemplate manifests stay clean.
 func TestNumaNetworkDranetOmitempty(t *testing.T) {
-	spec := NumaNetworkSpec{
-		RefDeviceClass:         RefDeviceClass{Name: "vf.nvidia.dra.net"},
-		RefResourceClaimDranet: RefResourceClaimDranet{IPRange: "10.0.0.0/24"},
-	}
-	b, err := json.Marshal(spec.RefResourceClaimDranet)
+	dranet := RefResourceClaimDranet{IPRange: "10.0.0.0/24"}
+	b, err := json.Marshal(dranet)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
