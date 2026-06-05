@@ -28,17 +28,10 @@ import (
 
 // User journey:
 // As a Numaflow pipeline operator, I want to define a NumaNetwork resource
-// specifying a DRA DeviceClass and connection type, so that GPU Direct
-// communication can be configured declaratively for pipelines.
-
-func TestConnectionTypeConstants(t *testing.T) {
-	if string(ConnectionTypeDirect) != "direct" {
-		t.Errorf("ConnectionTypeDirect = %q, want %q", ConnectionTypeDirect, "direct")
-	}
-	if string(ConnectionTypeMultiISBSvc) != "multi-isbsvc" {
-		t.Errorf("ConnectionTypeMultiISBSvc = %q, want %q", ConnectionTypeMultiISBSvc, "multi-isbsvc")
-	}
-}
+// that specifies a DRA DeviceClass and DRANET parameters (ipRange, ethernetSpeed,
+// vlanTag), so that GPU Direct communication can be configured declaratively.
+//
+// Spec reference: https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1711996930
 
 func TestNumaNetworkPhaseConstants(t *testing.T) {
 	cases := []struct {
@@ -57,43 +50,115 @@ func TestNumaNetworkPhaseConstants(t *testing.T) {
 	}
 }
 
-func TestNumaNetworkSpecAndStatusFields(t *testing.T) {
+// TestConnectionTypeConstants verifies the constants used in Pipeline edges.
+// connectionType is NOT part of NumaNetworkSpec; it appears in
+// Pipeline.spec.edges[].numaNetwork.connectionType.
+func TestConnectionTypeConstants(t *testing.T) {
+	if string(ConnectionTypeDirect) != "direct" {
+		t.Errorf("ConnectionTypeDirect = %q, want %q", ConnectionTypeDirect, "direct")
+	}
+	if string(ConnectionTypeMultiISBSvc) != "multi-isbsvc" {
+		t.Errorf("ConnectionTypeMultiISBSvc = %q, want %q", ConnectionTypeMultiISBSvc, "multi-isbsvc")
+	}
+}
+
+func TestNumaNetworkSpecFields(t *testing.T) {
 	nn := NumaNetwork{
 		Spec: NumaNetworkSpec{
-			DeviceClassName: "gpu.nvidia.com",
-			ConnectionType:  ConnectionTypeDirect,
+			RefDeviceClass: RefDeviceClass{
+				Name: "vf.nvidia.dra.net",
+			},
+			RefResourceClaimDranet: RefResourceClaimDranet{
+				IPRange:       "192.168.10.0/24",
+				EthernetSpeed: 100,
+				VlanTag:       10,
+			},
 		},
 		Status: NumaNetworkStatus{
 			Phase:                     NumaNetworkPhasePending,
 			Conditions:                []metav1.Condition{},
-			ResourceClaimTemplateName: "nn-rct",
+			ResourceClaimTemplateName: "pipeline1-multi-network-rct",
 		},
 	}
 
-	if nn.Spec.DeviceClassName != "gpu.nvidia.com" {
-		t.Errorf("DeviceClassName = %q", nn.Spec.DeviceClassName)
+	if nn.Spec.RefDeviceClass.Name != "vf.nvidia.dra.net" {
+		t.Errorf("RefDeviceClass.Name = %q", nn.Spec.RefDeviceClass.Name)
 	}
-	if nn.Status.ResourceClaimTemplateName != "nn-rct" {
+	if nn.Spec.RefResourceClaimDranet.IPRange != "192.168.10.0/24" {
+		t.Errorf("IPRange = %q", nn.Spec.RefResourceClaimDranet.IPRange)
+	}
+	if nn.Spec.RefResourceClaimDranet.EthernetSpeed != 100 {
+		t.Errorf("EthernetSpeed = %d", nn.Spec.RefResourceClaimDranet.EthernetSpeed)
+	}
+	if nn.Spec.RefResourceClaimDranet.VlanTag != 10 {
+		t.Errorf("VlanTag = %d", nn.Spec.RefResourceClaimDranet.VlanTag)
+	}
+	if nn.Status.ResourceClaimTemplateName != "pipeline1-multi-network-rct" {
 		t.Errorf("ResourceClaimTemplateName = %q", nn.Status.ResourceClaimTemplateName)
 	}
 }
 
-func TestNumaNetworkJSONTags(t *testing.T) {
+// TestNumaNetworkSpecOptionalDranetFields verifies that ethernetSpeed and
+// vlanTag are optional — a spec with only ipRange must be valid.
+func TestNumaNetworkSpecOptionalDranetFields(t *testing.T) {
 	nn := NumaNetwork{
 		Spec: NumaNetworkSpec{
-			DeviceClassName: "gpu.nvidia.com",
-			ConnectionType:  ConnectionTypeDirect,
+			RefDeviceClass:         RefDeviceClass{Name: "vf.nvidia.dra.net"},
+			RefResourceClaimDranet: RefResourceClaimDranet{IPRange: "10.0.0.0/24"},
 		},
 	}
-	b, err := json.Marshal(nn.Spec)
+	if nn.Spec.RefResourceClaimDranet.EthernetSpeed != 0 {
+		t.Errorf("EthernetSpeed zero value expected, got %d", nn.Spec.RefResourceClaimDranet.EthernetSpeed)
+	}
+	if nn.Spec.RefResourceClaimDranet.VlanTag != 0 {
+		t.Errorf("VlanTag zero value expected, got %d", nn.Spec.RefResourceClaimDranet.VlanTag)
+	}
+}
+
+func TestNumaNetworkJSONTags(t *testing.T) {
+	spec := NumaNetworkSpec{
+		RefDeviceClass: RefDeviceClass{Name: "vf.nvidia.dra.net"},
+		RefResourceClaimDranet: RefResourceClaimDranet{
+			IPRange:       "192.168.10.0/24",
+			EthernetSpeed: 100,
+			VlanTag:       10,
+		},
+	}
+	b, err := json.Marshal(spec)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	s := string(b)
-	for _, key := range []string{`"deviceClassName"`, `"connectionType"`} {
+	for _, key := range []string{
+		`"refDeviceClass"`,
+		`"refResourceClaimDranet"`,
+		`"ipRange"`,
+		`"ethernetSpeed"`,
+		`"vlanTag"`,
+	} {
 		if !strings.Contains(s, key) {
-			t.Errorf("spec JSON %s missing key %s", s, key)
+			t.Errorf("spec JSON missing key %s: %s", key, s)
 		}
+	}
+}
+
+// TestNumaNetworkDranetOmitempty verifies that zero-value optional fields are
+// omitted from JSON so generated ResourceClaimTemplate manifests stay clean.
+func TestNumaNetworkDranetOmitempty(t *testing.T) {
+	spec := NumaNetworkSpec{
+		RefDeviceClass:         RefDeviceClass{Name: "vf.nvidia.dra.net"},
+		RefResourceClaimDranet: RefResourceClaimDranet{IPRange: "10.0.0.0/24"},
+	}
+	b, err := json.Marshal(spec.RefResourceClaimDranet)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(b)
+	if strings.Contains(s, `"ethernetSpeed"`) {
+		t.Errorf("zero ethernetSpeed should be omitted: %s", s)
+	}
+	if strings.Contains(s, `"vlanTag"`) {
+		t.Errorf("zero vlanTag should be omitted: %s", s)
 	}
 }
 
@@ -134,23 +199,34 @@ func TestCRDManifest(t *testing.T) {
 		t.Errorf("subresources.status missing: %v", sub)
 	}
 
-	// spec.connectionType has default "direct"
-	connType := dig(t, v0, "schema", "openAPIV3Schema", "properties", "spec", "properties", "connectionType")
-	if connType["default"] != "direct" {
-		t.Errorf("connectionType default = %v, want \"direct\"", connType["default"])
-	}
-
-	// deviceClassName is required
+	// refDeviceClass and refResourceClaimDranet are both required in spec
 	specSchema := dig(t, v0, "schema", "openAPIV3Schema", "properties", "spec")
 	required, _ := specSchema["required"].([]interface{})
-	foundReq := false
-	for _, r := range required {
-		if r == "deviceClassName" {
-			foundReq = true
+	wantRequired := []string{"refDeviceClass", "refResourceClaimDranet"}
+	for _, want := range wantRequired {
+		foundReq := false
+		for _, r := range required {
+			if r == want {
+				foundReq = true
+			}
+		}
+		if !foundReq {
+			t.Errorf("spec.required = %v, want to contain %q", required, want)
 		}
 	}
-	if !foundReq {
-		t.Errorf("spec.required = %v, want to contain \"deviceClassName\"", required)
+
+	// refResourceClaimDranet.ipRange is required
+	dranetSchema := dig(t, v0, "schema", "openAPIV3Schema", "properties", "spec",
+		"properties", "refResourceClaimDranet")
+	dranetRequired, _ := dranetSchema["required"].([]interface{})
+	foundIPRange := false
+	for _, r := range dranetRequired {
+		if r == "ipRange" {
+			foundIPRange = true
+		}
+	}
+	if !foundIPRange {
+		t.Errorf("refResourceClaimDranet.required = %v, want to contain \"ipRange\"", dranetRequired)
 	}
 }
 
