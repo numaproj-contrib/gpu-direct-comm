@@ -1,0 +1,35 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: numaflow-cluster
+
+servers: 1
+agents: 2
+
+# Using lates version is recommended
+# https://github.com/k3s-io/k3s/releases
+image: rancher/k3s:v1.34.2-k3s1
+
+kubeAPI:
+  host: "127.0.0.1"
+  hostPort: "6443"
+
+ports:
+  - port: "80:80"
+    nodeFilters:
+      - loadbalancer
+  - port: "443:443"
+    nodeFilters:
+      - loadbalancer
+
+options:
+  k3s:
+    extraArgs:
+      # Disable metrics server Since Numaflow-related tools will be installed separately later
+      - arg: "--disable=metrics-server"
+        nodeFilters:
+          - server:*
+
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true
