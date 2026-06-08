@@ -294,10 +294,11 @@ func serviceAccountToken() (string, error) {
 	By("creating temporary file to store the token request")
 	secretName := fmt.Sprintf("%s-token-request", serviceAccountName)
 	tokenRequestFile := filepath.Join("/tmp", secretName)
-	err := os.WriteFile(tokenRequestFile, []byte(tokenRequestRawString), os.FileMode(0o644))
+	err := os.WriteFile(tokenRequestFile, []byte(tokenRequestRawString), os.FileMode(0o600))
 	if err != nil {
 		return "", err
 	}
+	defer os.Remove(tokenRequestFile)
 
 	var out string
 	verifyTokenCreation := func(g Gomega) {

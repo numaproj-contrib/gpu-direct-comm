@@ -6,5 +6,9 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: numanetwork-sample
 spec:
-  deviceClassName: gpu.nvidia.com
-  connectionType: direct
+  refDeviceClass:
+    name: vf.nvidia.dra.net
+  refResourceClaimDranet:
+    ipRange: "192.168.10.0/24"
+    ethernetSpeed: 100
+    vlanTag: 10

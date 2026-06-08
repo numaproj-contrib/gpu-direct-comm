@@ -82,6 +82,7 @@ func TestNumaNetworkJSONTags(t *testing.T) {
 	s := string(b)
 	for _, key := range []string{
 		`"refDeviceClass"`,
+		`"name"`,
 		`"refResourceClaimDranet"`,
 		`"ipRange"`,
 		`"ethernetSpeed"`,
@@ -139,7 +140,10 @@ func TestCRDManifest(t *testing.T) {
 	if len(versions) != 1 {
 		t.Fatalf("versions = %d, want 1", len(versions))
 	}
-	v0 := versions[0].(map[string]interface{})
+	v0, ok := versions[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("versions[0] is not a map: %T", versions[0])
+	}
 
 	// subresources.status is defined
 	sub, _ := v0["subresources"].(map[string]interface{})

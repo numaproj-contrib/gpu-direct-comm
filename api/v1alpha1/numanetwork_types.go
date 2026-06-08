@@ -33,17 +33,20 @@ type RefDeviceClass struct {
 type RefResourceClaimDranet struct {
 	// ipRange is the CIDR block from which the IPAM tool assigns IPs to secondary NICs.
 	// Example: "192.168.10.0/24"
-	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/([0-9]|[1-2][0-9]|3[0-2])$`
 	// +required
 	IPRange string `json:"ipRange"`
 
 	// ethernetSpeed is the upper-limit Ethernet speed (Gb/s) of the physical network path.
 	// This is informational for manifest authors and does not enforce QoS.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	EthernetSpeed int32 `json:"ethernetSpeed,omitempty"`
 
 	// vlanTag is the VLAN tag value assigned to frames on this NumaNetwork.
 	// Applicable when using the CNI-DRA driver with macvlan CNI.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=4094
 	// +optional
 	VlanTag int32 `json:"vlanTag,omitempty"`
 }

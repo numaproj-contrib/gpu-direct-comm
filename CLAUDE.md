@@ -7,6 +7,10 @@
 
 ```
 ~/project/
+├── .claude                 
+│   ├── prds                # 要件定義書
+│   ├── plans               # 実行計画書
+│   ├── tdds                # 実装+テスト 報告書
 ├── gpu-direct-comm/        # ここ（STEP2 main dev）
 │   ├── k3d-config.yaml     # Local k3d cluster config
 │   └── numaflow_dev_env_tools/  # Dev tool installers
@@ -30,11 +34,18 @@
 - 追加導入: `node ~/everything-claude-code/scripts/install-apply.js --target claude-project --modules <id>`
 - 状態: `.claude/ecc/install-state.json`
 
+## 開発時の注意事項
+- YAGNI（You Aren't Gonna Need It）原則に従うこと
+- tdd-workflowスキルの実行時
+  - 実行前に /codex:setup --enable-review-gate を実行して，codexに対するStop hook（セッション終了時の自動レビュー）を有効化すること．tdd-workflowの実行後は，--disable-review-gate オプションで無効化すること
+  - [アクセラレータ間直接通信 STEP2設計](https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1711996930/STEP?atlOrigin=eyJpIjoiOWJiNzc0OGIwZTEwNDUxMmFiMmRiYjQ2ODAyNTZkZWIiLCJwIjoiYyJ9) を参照して，設計・仕様を確認すること
+
 ## External Documents
 ### アクセラレータ間直接通信
 - [AICP-Numaflow-PoCマイルストーン](https://compsysg.atlassian.net/wiki/spaces/DCC/pages/982679603/AICP-Numaflow-PoC)
 - [アクセラレータ間直接通信 全体計画](https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1052409966)
 - [アクセラレータ間直接通信 STEP2設計](https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1711996930/STEP?atlOrigin=eyJpIjoiOWJiNzc0OGIwZTEwNDUxMmFiMmRiYjQ2ODAyNTZkZWIiLCJwIjoiYyJ9)
+  - 設計・仕様についてはここを参照すること
 - [アクセラレータ間直接通信 STEP2作業項目](https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1715634194/STEP2)
 
 ### Tools
