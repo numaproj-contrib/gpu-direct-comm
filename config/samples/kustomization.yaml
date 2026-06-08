@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- numaflow_v1alpha1_numanetwork.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
