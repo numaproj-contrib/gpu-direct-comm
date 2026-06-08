@@ -118,14 +118,14 @@ func TestCRDManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CRD manifest not generated yet: %v", err)
 	}
-	var crd map[string]interface{}
+	var crd map[string]any
 	if err := yaml.Unmarshal(b, &crd); err != nil {
 		t.Fatalf("unmarshal CRD: %v", err)
 	}
 
 	// spec.names.shortNames contains "nn"
 	names := dig(t, crd, "spec", "names")
-	shortNames, _ := names["shortNames"].([]interface{})
+	shortNames, _ := names["shortNames"].([]any)
 	found := false
 	for _, sn := range shortNames {
 		if sn == "nn" {
@@ -136,24 +136,24 @@ func TestCRDManifest(t *testing.T) {
 		t.Errorf("shortNames = %v, want to contain \"nn\"", shortNames)
 	}
 
-	versions, _ := dig(t, crd, "spec")["versions"].([]interface{})
+	versions, _ := dig(t, crd, "spec")["versions"].([]any)
 	if len(versions) != 1 {
 		t.Fatalf("versions = %d, want 1", len(versions))
 	}
-	v0, ok := versions[0].(map[string]interface{})
+	v0, ok := versions[0].(map[string]any)
 	if !ok {
 		t.Fatalf("versions[0] is not a map: %T", versions[0])
 	}
 
 	// subresources.status is defined
-	sub, _ := v0["subresources"].(map[string]interface{})
+	sub, _ := v0["subresources"].(map[string]any)
 	if _, ok := sub["status"]; !ok {
 		t.Errorf("subresources.status missing: %v", sub)
 	}
 
 	// refDeviceClass and refResourceClaimDranet are both required in spec
 	specSchema := dig(t, v0, "schema", "openAPIV3Schema", "properties", "spec")
-	required, _ := specSchema["required"].([]interface{})
+	required, _ := specSchema["required"].([]any)
 	wantRequired := []string{"refDeviceClass", "refResourceClaimDranet"}
 	for _, want := range wantRequired {
 		foundReq := false
@@ -170,7 +170,7 @@ func TestCRDManifest(t *testing.T) {
 	// refResourceClaimDranet.ipRange is required
 	dranetSchema := dig(t, v0, "schema", "openAPIV3Schema", "properties", "spec",
 		"properties", "refResourceClaimDranet")
-	dranetRequired, _ := dranetSchema["required"].([]interface{})
+	dranetRequired, _ := dranetSchema["required"].([]any)
 	foundIPRange := false
 	for _, r := range dranetRequired {
 		if r == "ipRange" {
@@ -182,12 +182,12 @@ func TestCRDManifest(t *testing.T) {
 	}
 }
 
-// dig walks nested map[string]interface{} keys, failing the test on a missing path.
-func dig(t *testing.T, m map[string]interface{}, path ...string) map[string]interface{} {
+// dig walks nested map[string]any keys, failing the test on a missing path.
+func dig(t *testing.T, m map[string]any, path ...string) map[string]any {
 	t.Helper()
 	cur := m
 	for _, k := range path {
-		next, ok := cur[k].(map[string]interface{})
+		next, ok := cur[k].(map[string]any)
 		if !ok {
 			t.Fatalf("path %v: key %q missing or not a map", path, k)
 		}
