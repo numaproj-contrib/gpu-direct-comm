@@ -30,25 +30,17 @@ type RefDeviceClass struct {
 
 // RefResourceClaimDranet configures the DRANET parameters embedded in the
 // ResourceClaimTemplate that the controller generates for this NumaNetwork.
+// IP assignment is delegated to the dranet webhook via a named profile (ADR-0004).
+// ethernetSpeed removed (DRANET does not publish link speed, ADR-0002).
+// vlanTag removed (conflicts with BYODP model, ADR-0003).
 type RefResourceClaimDranet struct {
-	// ipRange is the CIDR block from which the IPAM tool assigns IPs to secondary NICs.
+	// ipRange is the CIDR block passed to the dranet webhook profile for IPAM.
+	// The controller does NOT embed this directly in the RCT opaque config;
+	// it is resolved by the webhook provider at admission time (ADR-0004).
 	// Example: "192.168.10.0/24"
 	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/([0-9]|[1-2][0-9]|3[0-2])$`
 	// +required
 	IPRange string `json:"ipRange"`
-
-	// ethernetSpeed is the upper-limit Ethernet speed (Gb/s) of the physical network path.
-	// This is informational for manifest authors and does not enforce QoS.
-	// +kubebuilder:validation:Minimum=0
-	// +optional
-	EthernetSpeed int32 `json:"ethernetSpeed,omitempty"`
-
-	// vlanTag is the VLAN tag value assigned to frames on this NumaNetwork.
-	// Applicable when using the CNI-DRA driver with macvlan CNI.
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=4094
-	// +optional
-	VlanTag int32 `json:"vlanTag,omitempty"`
 }
 
 // NumaNetworkSpec defines the desired state of NumaNetwork.

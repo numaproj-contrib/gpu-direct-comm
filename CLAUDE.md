@@ -47,6 +47,14 @@
 - [アクセラレータ間直接通信 STEP2設計](https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1711996930/STEP?atlOrigin=eyJpIjoiOWJiNzc0OGIwZTEwNDUxMmFiMmRiYjQ2ODAyNTZkZWIiLCJwIjoiYyJ9)
   - 設計・仕様についてはここを参照すること
 - [アクセラレータ間直接通信 STEP2作業項目](https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1715634194/STEP2)
+- [DRANET 使用方法](https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1827307521/DRANET#Whereabouts-IPAM%E3%81%A8%E3%81%AE%E9%80%A3%E6%90%BA)
+  - whereaboutsの情報はここを参照
+  - https://github.com/kubernetes-sigs/dranet/issues/103
+  - https://github.com/kubernetes-sigs/dranet/pull/223
+  - https://github.com/compsysg/dci-community-team/blob/main/patches/dranet/webhook-whereabouts/whereabouts-webhook-daemonset-fixed.yaml#L22-L51
+  - https://github.com/compsysg/dci-community-team/tree/main/patches/dranet/webhook-whereabouts/examples
+- ADR(Architecture Decesion Record)：`~/sesame-brain/wiki/kubernetes/gpu-direct-comm/`
+
 
 ### Tools
 - [Everything-Claude-Codeの使用方法](https://compsysg.atlassian.net/wiki/spaces/SCG/pages/2087911559/Everything-Claude-Code?atlOrigin=eyJpIjoiOGM1Y2E3Nzg0MDFkNGUxZGFlZjJlN2FjMzhlNzFjNmEiLCJwIjoiYyJ9)
