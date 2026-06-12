@@ -306,3 +306,45 @@ func TestReconcile_IPRangeNotInOpaqueConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestReconcile_NotFound_NoError(t *testing.T) {
+	// Arrange: NumaNetwork does not exist
+	s := buildScheme(t)
+	fakeClient := fake.NewClientBuilder().WithScheme(s).Build()
+	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
+
+	// Act: reconciling a missing object should return no error
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "missing", Namespace: "default"}})
+
+	// Assert
+	if err != nil {
+		t.Errorf("expected no error for NotFound, got: %v", err)
+	}
+}
+
+func TestReconcile_RCTSpecUpdatedOnChange(t *testing.T) {
+	// Arrange: pre-create RCT with wrong DeviceClass, reconcile should update it
+	s := buildScheme(t)
+	nn := newNN("test-nn", "test-ns")
+	// Pre-create RCT with a stale spec
+	staleRCT := BuildResourceClaimTemplate(nn)
+	staleRCT.Spec.Spec.Devices.Requests[0].Exactly.DeviceClassName = "old.class"
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn, staleRCT).WithStatusSubresource(nn).Build()
+	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
+
+	// Act
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile error: %v", err)
+	}
+
+	// Assert: DeviceClass updated to match NumaNetwork spec
+	rct := &resourcev1.ResourceClaimTemplate{}
+	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-nn-rct", Namespace: "test-ns"}, rct); err != nil {
+		t.Fatalf("RCT not found: %v", err)
+	}
+	got := rct.Spec.Spec.Devices.Requests[0].Exactly.DeviceClassName
+	if got != "vf.nvidia.dra.net" {
+		t.Errorf("DeviceClassName = %q after update, want %q", got, "vf.nvidia.dra.net")
+	}
+}

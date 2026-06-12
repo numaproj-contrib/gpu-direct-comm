@@ -10,5 +10,3 @@ spec:
     name: vf.nvidia.dra.net
   refResourceClaimDranet:
     ipRange: "192.168.10.0/24"
-    ethernetSpeed: 100
-    vlanTag: 10
