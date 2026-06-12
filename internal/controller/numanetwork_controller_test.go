@@ -68,6 +68,22 @@ func newNN(name, ns string) *numaflowv1alpha1.NumaNetwork {
 	}
 }
 
+// cidrPattern matches IPv4 CIDR values like "192.168.10.0/24" (ADR-0004).
+var cidrPattern = regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+/\d+$`)
+
+// assertNoIPRangeInParams fails the test if params contains any IP-range entry.
+// IP ranges must be resolved by the dranet webhook profile, not embedded in opaque config (ADR-0004).
+func assertNoIPRangeInParams(t *testing.T, params map[string]string) {
+	t.Helper()
+	for k, v := range params {
+		if strings.Contains(strings.ToLower(k), "iprange") ||
+			strings.Contains(strings.ToLower(k), "cidr") ||
+			cidrPattern.MatchString(v) {
+			t.Errorf("opaque params must not contain IP-range entry %q=%q (must go through profile/webhook)", k, v)
+		}
+	}
+}
+
 // ─── TestBuildResourceClaimTemplate ───────────────────────────────────────────
 
 func TestBuildResourceClaimTemplate(t *testing.T) {
@@ -119,14 +135,7 @@ func TestBuildResourceClaimTemplate(t *testing.T) {
 		t.Errorf("profile = %q, want %q", params["profile"], wantProfile)
 	}
 	// ipRange must NOT appear directly in opaque parameters (ADR-0004).
-	cidrPat := regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+/\d+$`)
-	for k, v := range params {
-		if strings.Contains(strings.ToLower(k), "iprange") ||
-			strings.Contains(strings.ToLower(k), "cidr") ||
-			cidrPat.MatchString(v) {
-			t.Errorf("opaque params must not contain IP-range entry %q=%q (must go through profile/webhook)", k, v)
-		}
-	}
+	assertNoIPRangeInParams(t, params)
 }
 
 // ─── Reconcile integration tests (fake client) ────────────────────────────────
@@ -296,15 +305,8 @@ func TestReconcile_IPRangeNotInOpaqueConfig(t *testing.T) {
 	if err := json.Unmarshal(rct.Spec.Spec.Devices.Config[0].Opaque.Parameters.Raw, &params); err != nil {
 		t.Fatalf("unmarshal parameters: %v", err)
 	}
-	// cidrPattern matches values like "192.168.10.0/24" (ADR-0004: IP range must not appear directly).
-	cidrPattern := regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+/\d+$`)
-	for k, v := range params {
-		if strings.Contains(strings.ToLower(k), "iprange") ||
-			strings.Contains(strings.ToLower(k), "cidr") ||
-			cidrPattern.MatchString(v) {
-			t.Errorf("opaque params contain IP-range entry %q=%q (must be profile-delegated, ADR-0004)", k, v)
-		}
-	}
+	// IP range must not appear directly in opaque config (ADR-0004).
+	assertNoIPRangeInParams(t, params)
 }
 
 func TestReconcile_NotFound_NoError(t *testing.T) {
@@ -346,5 +348,13 @@ func TestReconcile_RCTSpecUpdatedOnChange(t *testing.T) {
 	got := rct.Spec.Spec.Devices.Requests[0].Exactly.DeviceClassName
 	if got != "vf.nvidia.dra.net" {
 		t.Errorf("DeviceClassName = %q after update, want %q", got, "vf.nvidia.dra.net")
+	}
+	// Assert: ownerReference must be restored even on the update path.
+	if len(rct.OwnerReferences) == 0 {
+		t.Fatal("OwnerReferences is empty after update — ownerRef must be maintained on update path")
+	}
+	owner := rct.OwnerReferences[0]
+	if owner.Kind != "NumaNetwork" || owner.Name != "test-nn" {
+		t.Errorf("owner = {Kind:%q Name:%q}, want {Kind:NumaNetwork Name:test-nn}", owner.Kind, owner.Name)
 	}
 }

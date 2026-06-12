@@ -74,27 +74,50 @@ func (r *NumaNetworkReconciler) reconcileRCT(ctx context.Context, nn *numaflowv1
 
 	existing := &resourcev1.ResourceClaimTemplate{}
 	err := r.Get(ctx, client.ObjectKeyFromObject(desired), existing)
+
+	// needsUpdate is true when we have an existing object to reconcile against
+	// desired — either because Get found it, or because Create raced with
+	// another writer (AlreadyExists) and we re-read the winner.
+	needsUpdate := false
 	if apierrors.IsNotFound(err) {
-		if err := r.Create(ctx, desired); err != nil {
-			return fmt.Errorf("create RCT: %w", err)
+		if createErr := r.Create(ctx, desired); createErr != nil {
+			if !apierrors.IsAlreadyExists(createErr) {
+				return fmt.Errorf("create RCT: %w", createErr)
+			}
+			// Race: another writer created the RCT between our Get and Create.
+			// Re-read it so the update path below can reconcile spec and ownerRef.
+			if err = r.Get(ctx, client.ObjectKeyFromObject(desired), existing); err != nil {
+				return fmt.Errorf("get RCT after AlreadyExists: %w", err)
+			}
+			needsUpdate = true
 		}
 	} else if err != nil {
 		return fmt.Errorf("get RCT: %w", err)
 	} else {
+		needsUpdate = true
+	}
+
+	if needsUpdate {
 		updated := existing.DeepCopy()
+		// Restore ownerReference in case it was removed externally.
+		if err := controllerutil.SetControllerReference(nn, updated, r.Scheme); err != nil {
+			return fmt.Errorf("set controller reference: %w", err)
+		}
 		updated.Spec = desired.Spec
-		if !equality.Semantic.DeepEqual(existing.Spec, updated.Spec) {
+		if !equality.Semantic.DeepEqual(existing.Spec, desired.Spec) ||
+			!equality.Semantic.DeepEqual(existing.OwnerReferences, updated.OwnerReferences) {
 			if err := r.Update(ctx, updated); err != nil {
 				return fmt.Errorf("update RCT: %w", err)
 			}
 		}
 	}
 
-	// Write status only when it changes.
+	// Write status only when it changes. Use Patch to avoid resourceVersion
+	// conflicts when the spec is updated concurrently (fix 3).
 	if nn.Status.ResourceClaimTemplateName != desired.Name {
 		patch := nn.DeepCopy()
 		patch.Status.ResourceClaimTemplateName = desired.Name
-		if err := r.Status().Update(ctx, patch); err != nil {
+		if err := r.Status().Patch(ctx, patch, client.MergeFrom(nn)); err != nil {
 			return fmt.Errorf("update status: %w", err)
 		}
 	}
