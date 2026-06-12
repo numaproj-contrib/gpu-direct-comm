@@ -51,10 +51,10 @@ func buildScheme(t *testing.T) *runtime.Scheme {
 }
 
 // newNN returns a minimal NumaNetwork for use in tests.
-func newNN(name, ns string) *numaflowv1alpha1.NumaNetwork {
+func newNN(ns string) *numaflowv1alpha1.NumaNetwork {
 	return &numaflowv1alpha1.NumaNetwork{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      "test-nn",
 			Namespace: ns,
 		},
 		Spec: numaflowv1alpha1.NumaNetworkSpec{
@@ -87,7 +87,7 @@ func assertNoIPRangeInParams(t *testing.T, params map[string]string) {
 // ─── TestBuildResourceClaimTemplate ───────────────────────────────────────────
 
 func TestBuildResourceClaimTemplate(t *testing.T) {
-	nn := newNN("test-nn", "default")
+	nn := newNN("default")
 
 	rct := BuildResourceClaimTemplate(nn)
 
@@ -143,7 +143,7 @@ func TestBuildResourceClaimTemplate(t *testing.T) {
 func TestReconcile_RCTCreatedInSameNamespace(t *testing.T) {
 	// Arrange
 	s := buildScheme(t)
-	nn := newNN("test-nn", "test-ns")
+	nn := newNN("test-ns")
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn).WithStatusSubresource(nn).Build()
 	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
 
@@ -166,7 +166,7 @@ func TestReconcile_RCTCreatedInSameNamespace(t *testing.T) {
 func TestReconcile_OwnerReference(t *testing.T) {
 	// Arrange
 	s := buildScheme(t)
-	nn := newNN("test-nn", "test-ns")
+	nn := newNN("test-ns")
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn).WithStatusSubresource(nn).Build()
 	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
 
@@ -199,7 +199,7 @@ func TestReconcile_OwnerReference(t *testing.T) {
 func TestReconcile_StatusUpdated(t *testing.T) {
 	// Arrange
 	s := buildScheme(t)
-	nn := newNN("test-nn", "test-ns")
+	nn := newNN("test-ns")
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn).WithStatusSubresource(nn).Build()
 	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
 
@@ -222,7 +222,7 @@ func TestReconcile_StatusUpdated(t *testing.T) {
 func TestReconcile_Idempotent(t *testing.T) {
 	// Arrange
 	s := buildScheme(t)
-	nn := newNN("test-nn", "test-ns")
+	nn := newNN("test-ns")
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn).WithStatusSubresource(nn).Build()
 	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
 
@@ -249,7 +249,7 @@ func TestReconcile_Idempotent(t *testing.T) {
 func TestReconcile_OpaqueDriverAndProfile(t *testing.T) {
 	// Arrange
 	s := buildScheme(t)
-	nn := newNN("test-nn", "test-ns")
+	nn := newNN("test-ns")
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn).WithStatusSubresource(nn).Build()
 	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
 
@@ -283,7 +283,7 @@ func TestReconcile_OpaqueDriverAndProfile(t *testing.T) {
 func TestReconcile_IPRangeNotInOpaqueConfig(t *testing.T) {
 	// Arrange
 	s := buildScheme(t)
-	nn := newNN("test-nn", "test-ns")
+	nn := newNN("test-ns")
 	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn).WithStatusSubresource(nn).Build()
 	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
 
@@ -327,7 +327,7 @@ func TestReconcile_NotFound_NoError(t *testing.T) {
 func TestReconcile_RCTSpecUpdatedOnChange(t *testing.T) {
 	// Arrange: pre-create RCT with wrong DeviceClass, reconcile should update it
 	s := buildScheme(t)
-	nn := newNN("test-nn", "test-ns")
+	nn := newNN("test-ns")
 	// Pre-create RCT with a stale spec
 	staleRCT := BuildResourceClaimTemplate(nn)
 	staleRCT.Spec.Spec.Devices.Requests[0].Exactly.DeviceClassName = "old.class"
