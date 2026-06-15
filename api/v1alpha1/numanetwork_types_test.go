@@ -27,8 +27,9 @@ import (
 
 // User journey:
 // As a Numaflow pipeline operator, I want to define a NumaNetwork resource
-// that specifies a DRA DeviceClass and DRANET parameters (ipRange, ethernetSpeed,
-// vlanTag), so that GPU Direct communication can be configured declaratively.
+// that specifies a DRA DeviceClass and DRANET parameters (ipRange), so that
+// GPU Direct communication can be configured declaratively.
+// ethernetSpeed and vlanTag were removed in M2 (ADR-0002, ADR-0003).
 //
 // Spec reference: https://compsysg.atlassian.net/wiki/spaces/DCC/pages/1711996930
 
@@ -39,9 +40,7 @@ func TestNumaNetworkSpecFields(t *testing.T) {
 				Name: "vf.nvidia.dra.net",
 			},
 			RefResourceClaimDranet: RefResourceClaimDranet{
-				IPRange:       "192.168.10.0/24",
-				EthernetSpeed: 100,
-				VlanTag:       10,
+				IPRange: "192.168.10.0/24",
 			},
 		},
 		Status: NumaNetworkStatus{
@@ -55,12 +54,6 @@ func TestNumaNetworkSpecFields(t *testing.T) {
 	if nn.Spec.RefResourceClaimDranet.IPRange != "192.168.10.0/24" {
 		t.Errorf("IPRange = %q", nn.Spec.RefResourceClaimDranet.IPRange)
 	}
-	if nn.Spec.RefResourceClaimDranet.EthernetSpeed != 100 {
-		t.Errorf("EthernetSpeed = %d", nn.Spec.RefResourceClaimDranet.EthernetSpeed)
-	}
-	if nn.Spec.RefResourceClaimDranet.VlanTag != 10 {
-		t.Errorf("VlanTag = %d", nn.Spec.RefResourceClaimDranet.VlanTag)
-	}
 	if nn.Status.ResourceClaimTemplateName != "pipeline1-multi-network-rct" {
 		t.Errorf("ResourceClaimTemplateName = %q", nn.Status.ResourceClaimTemplateName)
 	}
@@ -70,9 +63,7 @@ func TestNumaNetworkJSONTags(t *testing.T) {
 	spec := NumaNetworkSpec{
 		RefDeviceClass: RefDeviceClass{Name: "vf.nvidia.dra.net"},
 		RefResourceClaimDranet: RefResourceClaimDranet{
-			IPRange:       "192.168.10.0/24",
-			EthernetSpeed: 100,
-			VlanTag:       10,
+			IPRange: "192.168.10.0/24",
 		},
 	}
 	b, err := json.Marshal(spec)
@@ -85,29 +76,36 @@ func TestNumaNetworkJSONTags(t *testing.T) {
 		`"name"`,
 		`"refResourceClaimDranet"`,
 		`"ipRange"`,
-		`"ethernetSpeed"`,
-		`"vlanTag"`,
 	} {
 		if !strings.Contains(s, key) {
 			t.Errorf("spec JSON missing key %s: %s", key, s)
 		}
 	}
+	// ethernetSpeed and vlanTag removed in M2 (ADR-0002, ADR-0003)
+	for _, removed := range []string{`"ethernetSpeed"`, `"vlanTag"`} {
+		if strings.Contains(s, removed) {
+			t.Errorf("spec JSON must not contain removed field %s", removed)
+		}
+	}
 }
 
-// TestNumaNetworkDranetOmitempty verifies that zero-value optional fields are
-// omitted from JSON so generated ResourceClaimTemplate manifests stay clean.
-func TestNumaNetworkDranetOmitempty(t *testing.T) {
+// TestNumaNetworkDranetOnlyIPRange verifies that the JSON output contains only
+// the ipRange field (ethernetSpeed and vlanTag were removed in M2 per ADR-0002/ADR-0003).
+func TestNumaNetworkDranetOnlyIPRange(t *testing.T) {
 	dranet := RefResourceClaimDranet{IPRange: "10.0.0.0/24"}
 	b, err := json.Marshal(dranet)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	s := string(b)
+	if !strings.Contains(s, `"ipRange"`) {
+		t.Errorf("ipRange missing: %s", s)
+	}
 	if strings.Contains(s, `"ethernetSpeed"`) {
-		t.Errorf("zero ethernetSpeed should be omitted: %s", s)
+		t.Errorf("ethernetSpeed must be absent (removed ADR-0002): %s", s)
 	}
 	if strings.Contains(s, `"vlanTag"`) {
-		t.Errorf("zero vlanTag should be omitted: %s", s)
+		t.Errorf("vlanTag must be absent (removed ADR-0003): %s", s)
 	}
 }
 

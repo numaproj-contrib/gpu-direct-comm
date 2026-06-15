@@ -36,6 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	numaflowv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/api/v1alpha1"
+	"github.com/numaproj-contrib/gpu-direct-comm/internal/controller"
+	resourcev1 "k8s.io/api/resource/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -48,6 +50,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(numaflowv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(resourcev1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -175,6 +178,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.NumaNetworkReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "numanetwork")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
