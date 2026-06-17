@@ -37,6 +37,7 @@ import (
 
 	numaflowv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/api/v1alpha1"
 	"github.com/numaproj-contrib/gpu-direct-comm/internal/controller"
+	webhookv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/internal/webhook/v1alpha1"
 	resourcev1 "k8s.io/api/resource/v1"
 	// +kubebuilder:scaffold:imports
 )
@@ -185,6 +186,13 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "numanetwork")
 		os.Exit(1)
 	}
+	mgr.GetWebhookServer().Register(
+		"/validate-numaflow-numaproj-io-v1alpha1-pipeline",
+		&webhook.Admission{Handler: &webhookv1alpha1.PipelineValidator{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}},
+	)
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

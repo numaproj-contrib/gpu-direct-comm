@@ -1,0 +1,6 @@
+nameReference:
+- kind: Issuer
+  group: cert-manager.io
+  fieldSpecs:
+  - kind: Certificate
+    path: spec/issuerRef/name
