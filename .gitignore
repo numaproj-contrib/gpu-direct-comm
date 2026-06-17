@@ -31,6 +31,9 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# CLAUDE
+CLAUDE.md
+
 # ECC plugin install (regenerable via ~/everything-claude-code/scripts/install-apply.js)
 .claude/
 
