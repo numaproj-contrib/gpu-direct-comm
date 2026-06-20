@@ -1,5 +1,6 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+WEBHOOK_NN_IMG ?= webhook-whereabouts-numanetwork:latest
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
@@ -122,6 +123,10 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
+
+.PHONY: docker-build-webhook-nn
+docker-build-webhook-nn: ## Build docker image for the webhook-whereabouts-numanetwork.
+	$(CONTAINER_TOOL) build -f Dockerfile.webhook-whereabouts-numanetwork -t ${WEBHOOK_NN_IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
