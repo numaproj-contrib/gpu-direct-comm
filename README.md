@@ -11,7 +11,7 @@
 
 ## Architecture
 
-![Architecture Overview](docs/assets/architecture-overview.png)
+![Architecture Overview](docs/diagrams/architecture-overview.png)
 
 > The editable source for the diagram above is `docs/diagrams/architecture-overview.drawio`.
 
