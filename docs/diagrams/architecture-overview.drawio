@@ -1,0 +1,158 @@
+<mxfile host="app.diagrams.net" modified="2026-06-23T00:00:00.000Z" agent="draw.io" version="24.0.0" type="device">
+  <diagram id="arch-overview" name="Architecture Overview">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Kubernetes Cluster Boundary -->
+        <mxCell id="cluster" value="Kubernetes Cluster" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=5 5;fillColor=none;strokeColor=#333333;fontSize=14;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1020" height="780" as="geometry" />
+        </mxCell>
+
+        <!-- NumaNetwork CR -->
+        <mxCell id="numanetwork-cr" value="NumaNetwork CR" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="120" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- NumaNetwork Controller -->
+        <mxCell id="numanetwork-ctrl" value="NumaNetwork&#xa;Controller" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="120" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ResourceClaimTemplate -->
+        <mxCell id="rct" value="ResourceClaimTemplate&#xa;(RCT)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="120" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: NumaNetwork CR -> Controller -->
+        <mxCell id="edge-cr-ctrl" value="watches" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;" edge="1" source="numanetwork-cr" target="numanetwork-ctrl" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: Controller -> RCT -->
+        <mxCell id="edge-ctrl-rct" value="creates / updates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;" edge="1" source="numanetwork-ctrl" target="rct" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Pipeline CR -->
+        <mxCell id="pipeline-cr" value="Pipeline CR&#xa;(Numaflow)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="280" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ValidatingWebhook -->
+        <mxCell id="webhook" value="ValidatingWebhook&#xa;(Pipeline)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="280" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: Pipeline CR -> Webhook -->
+        <mxCell id="edge-pipeline-webhook" value="admission&#xa;request" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;" edge="1" source="pipeline-cr" target="webhook" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: Webhook -> NumaNetwork CR (validates existence) -->
+        <mxCell id="edge-webhook-cr" value="checks&#xa;existence" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;dashed=1;" edge="1" source="webhook" target="numanetwork-cr" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="240" />
+              <mxPoint x="160" y="240" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- cert-manager -->
+        <mxCell id="certmanager" value="cert-manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="280" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: cert-manager -> Webhook -->
+        <mxCell id="edge-cert-webhook" value="TLS cert" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;dashed=1;" edge="1" source="certmanager" target="webhook" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- DRANET (DRA Driver) -->
+        <mxCell id="dranet" value="DRANET&#xa;(DRA Driver)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="440" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: RCT -> DRANET -->
+        <mxCell id="edge-rct-dranet" value="DRA claim" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;" edge="1" source="rct" target="dranet" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="860" y="150" />
+              <mxPoint x="860" y="470" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Whereabouts IPAM -->
+        <mxCell id="whereabouts" value="whereabouts IPAM&#xa;(BYODP Webhook)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="440" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: DRANET -> Whereabouts -->
+        <mxCell id="edge-dranet-whereabouts" value="IP allocation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;" edge="1" source="dranet" target="whereabouts" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Vertex Pod 1 -->
+        <mxCell id="vertex-pod1" value="Vertex Pod&#xa;(with Secondary NIC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="130" y="600" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Vertex Pod 2 -->
+        <mxCell id="vertex-pod2" value="Vertex Pod&#xa;(with Secondary NIC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="600" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: DRANET -> Pod1 -->
+        <mxCell id="edge-dranet-pod1" value="NIC assign" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;" edge="1" source="dranet" target="vertex-pod1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="710" y="540" />
+              <mxPoint x="220" y="540" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Arrow: DRANET -> Pod2 -->
+        <mxCell id="edge-dranet-pod2" value="NIC assign" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;" edge="1" source="dranet" target="vertex-pod2" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="710" y="540" />
+              <mxPoint x="520" y="540" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- RDMA link between pods -->
+        <mxCell id="edge-rdma" value="RDMA Data Transfer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=11;fontStyle=1;strokeColor=#CC0000;strokeWidth=2;" edge="1" source="vertex-pod1" target="vertex-pod2" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="220" y="700" />
+              <mxPoint x="520" y="700" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend-border" value="Legend" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;fontSize=11;fontStyle=1;verticalAlign=top;align=left;spacingLeft=5;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="850" y="560" width="180" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-blue" value="CRD / Custom Resource" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="590" width="160" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-green" value="Controller / Operator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="622" width="160" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-orange" value="External Component" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="654" width="160" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-gray" value="K8s Native Resource" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="860" y="686" width="160" height="25" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
