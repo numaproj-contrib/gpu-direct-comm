@@ -1,0 +1,353 @@
+<mxfile host="Electron" agent="draw.io">
+  <diagram id="arch-overview" name="Architecture Overview">
+    <mxGraphModel dx="1222" dy="826" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1750" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="user" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;fontStyle=1;" value="User&#xa;(kubectl apply)" vertex="1">
+          <mxGeometry height="80" width="60" x="30" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="cluster" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=5 5;fillColor=none;strokeColor=#333333;fontSize=14;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;" value="Kubernetes Cluster" vertex="1">
+          <mxGeometry height="1350" width="1600" x="120" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="control-plane" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=4 4;fillColor=#EEF4FF;strokeColor=#4A6FD4;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;" value="Control Plane" vertex="1">
+          <mxGeometry height="670" width="1555" x="140" y="75" as="geometry" />
+        </mxCell>
+        <mxCell id="api-server" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontSize=12;fontStyle=1;" value="kube-apiserver" vertex="1">
+          <mxGeometry height="80" width="200" x="600" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="kube-scheduler" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontSize=12;fontStyle=1;" value="kube-scheduler" vertex="1">
+          <mxGeometry height="60" width="200" x="600" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="etcd-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=2 2;fillColor=#F8F8F8;strokeColor=#555555;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=5;" value="etcd" vertex="1">
+          <mxGeometry height="600" width="730" x="920" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="numanetwork-cr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" value="NumaNetwork CR&#xa;(user deploys YAML)" vertex="1">
+          <mxGeometry height="55" width="185" x="965" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="pipeline-cr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" value="Pipeline CR&#xa;(user deploys YAML&#xa;+ numa-network-edges annotation)" vertex="1">
+          <mxGeometry height="65" width="220" x="965" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="rct" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;fontStyle=1;" value="ResourceClaimTemplate&#xa;(RCT)" vertex="1">
+          <mxGeometry height="55" width="185" x="965" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="resource-claim" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;fontStyle=1;" value="ResourceClaim&#xa;(instantiated from RCT)" vertex="1">
+          <mxGeometry height="55" width="200" x="965" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="vertex-pod-spec" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;fontStyle=1;" value="Vertex Pod spec&#xa;(Pending → Scheduled)" vertex="1">
+          <mxGeometry height="55" width="200" x="1280" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="operator-deploy" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=3 3;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=11;fontStyle=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=5;" value="gpu-direct-comm (Deployment)" vertex="1">
+          <mxGeometry height="250" width="310" x="160" y="135" as="geometry" />
+        </mxCell>
+        <mxCell id="numanetwork-ctrl" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="NumaNetwork&#xa;Controller" vertex="1">
+          <mxGeometry height="55" width="170" x="180" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="webhook" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="ValidatingWebhook&#xa;(Pipeline)" vertex="1">
+          <mxGeometry height="55" width="170" x="180" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="webhook-config" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;fontStyle=1;" value="ValidatingWebhook&#xa;Configuration" vertex="1">
+          <mxGeometry height="45" width="170" x="1280" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="webhook-svc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;fontStyle=1;" value="Service&#xa;(webhook-service:443)" vertex="1">
+          <mxGeometry height="45" width="170" x="1280" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="certificate-cr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;fontStyle=1;" value="Certificate CR" vertex="1">
+          <mxGeometry height="40" width="170" x="1280" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="tls-secret" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;fontStyle=1;" value="Secret&#xa;(TLS cert for Webhook)" vertex="1">
+          <mxGeometry height="45" width="170" x="1280" y="570" as="geometry" />
+        </mxCell>
+        <mxCell id="pipeline-ctrl" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="Pipeline Controller&#xa;(Numaflow, Deployment)" vertex="1">
+          <mxGeometry height="55" width="210" x="160" y="530" as="geometry" />
+        </mxCell>
+        <mxCell id="certmanager" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" value="cert-manager&#xa;(Deployment x3)" vertex="1">
+          <mxGeometry height="55" width="170" x="160" y="640" as="geometry" />
+        </mxCell>
+        <mxCell id="worker-node" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=4 4;fillColor=#FFFBEE;strokeColor=#C8A000;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=5;" value="Worker Node" vertex="1">
+          <mxGeometry height="570" width="1555" x="140" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="kubelet-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=2 2;fillColor=#F0F4FF;strokeColor=#6080C0;fontSize=12;fontStyle=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=5;" value="kubelet" vertex="1">
+          <mxGeometry height="220" width="440" x="560" y="830" as="geometry" />
+        </mxCell>
+        <mxCell id="dranet" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" value="DRANET&#xa;(DRA kubelet Plugin, DaemonSet)" vertex="1">
+          <mxGeometry height="65" width="395" x="580" y="890" as="geometry" />
+        </mxCell>
+        <mxCell id="whereabouts" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" value="whereabouts IPAM&#xa;(BYODP Webhook, DaemonSet)" vertex="1">
+          <mxGeometry height="60" width="230" x="1100" y="890" as="geometry" />
+        </mxCell>
+        <mxCell id="vertex-pod1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;fontStyle=1;" value="Vertex Pod 1" vertex="1">
+          <mxGeometry height="45" width="180" x="210" y="1080" as="geometry" />
+        </mxCell>
+        <mxCell id="nic1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=10;" value="Secondary NIC&#xa;(IP: 192.168.10.x)" vertex="1">
+          <mxGeometry height="40" width="180" x="210" y="1130" as="geometry" />
+        </mxCell>
+        <mxCell id="vertex-pod2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;fontStyle=1;" value="Vertex Pod 2" vertex="1">
+          <mxGeometry height="45" width="180" x="490" y="1080" as="geometry" />
+        </mxCell>
+        <mxCell id="nic2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=10;" value="Secondary NIC&#xa;(IP: 192.168.10.y)" vertex="1">
+          <mxGeometry height="40" width="180" x="490" y="1130" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-user-api-nn" edge="1" parent="1" source="user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;fontStyle=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" target="api-server" value="① kubectl apply&#xa;NumaNetwork YAML">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="105" y="200" />
+              <mxPoint x="105" y="304" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-user-api-pl" edge="1" parent="1" source="user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;fontStyle=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.7;entryDx=0;entryDy=0;" target="api-server" value="② kubectl apply&#xa;Pipeline YAML">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="105" y="240" />
+              <mxPoint x="105" y="336" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-apiserver-numacr" edge="1" parent="1" source="api-server" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="numanetwork-cr" value="stores">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="880" y="300" />
+              <mxPoint x="880" y="207" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-ctrl-watch" edge="1" parent="1" source="numanetwork-ctrl" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" target="api-server" value="watches (informer)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="520" y="207" />
+              <mxPoint x="520" y="300" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-api-ctrl-event" edge="1" parent="1" source="api-server" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;dashed=1;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="numanetwork-ctrl" value="NumaNetwork&#xa;change event">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="500" y="300" />
+              <mxPoint x="500" y="207" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-ctrl-create-rct" edge="1" parent="1" source="numanetwork-ctrl" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=1;entryDx=0;entryDy=0;" target="api-server" value="create/update RCT">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="265" y="260" />
+              <mxPoint x="550" y="260" />
+              <mxPoint x="550" y="395" />
+              <mxPoint x="660" y="395" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-apiserver-rct" edge="1" parent="1" source="api-server" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="rct" value="stores">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="880" y="340" />
+              <mxPoint x="880" y="487" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-apiserver-whcfg" edge="1" parent="1" source="api-server" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=9;dashed=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="webhook-config" value="reads&#xa;WebhookConfig">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="880" y="300" />
+              <mxPoint x="880" y="192" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-whcfg-svc" edge="1" parent="1" source="webhook-config" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=9;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="webhook-svc" value="references">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-svc-webhook" edge="1" parent="1" source="webhook-svc" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=9;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="webhook" value="kube-proxy routes&#xa;→ operator Pod">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1260" y="262" />
+              <mxPoint x="1260" y="140" />
+              <mxPoint x="500" y="140" />
+              <mxPoint x="500" y="297" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-webhook-apiserver-req" edge="1" parent="1" source="webhook" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;dashed=1;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" target="api-server" value="Get NumaNetwork&#xa;(check existence)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="430" y="308" />
+              <mxPoint x="430" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-webhook-return" edge="1" parent="1" source="webhook" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;dashed=1;dashPattern=5 2;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="api-server" value="allow / deny">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="410" y="286" />
+              <mxPoint x="410" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-apiserver-pipeline" edge="1" parent="1" source="api-server" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="pipeline-cr" value="stores&#xa;(after validation)">
+          <mxGeometry relative="1" x="-0.1646" y="18" as="geometry">
+            <mxPoint x="18" y="18" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-cert-certcr" edge="1" parent="1" source="certmanager" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="certificate-cr" value="watches">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="900" y="656" />
+              <mxPoint x="900" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-cert-secret" edge="1" parent="1" source="certmanager" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="tls-secret" value="creates TLS cert">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="900" y="678" />
+              <mxPoint x="900" y="592" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-cainjector-whcfg" edge="1" parent="1" source="certmanager" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="webhook-config" value="cainjector injects&#xa;caBundle">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="245" y="625" />
+              <mxPoint x="1365" y="625" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-operator-secret" edge="1" parent="1" source="operator-deploy" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;dashed=1;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0;entryDx=0;entryDy=0;" target="tls-secret" value="mounts TLS Secret">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="470" y="420" />
+              <mxPoint x="1240" y="420" />
+              <mxPoint x="1240" y="570" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-plctrl-watch" edge="1" parent="1" source="pipeline-ctrl" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0.3;entryY=0.5;entryDx=0;entryDy=0;" target="api-server" value="watches Pipeline CR&#xa;(informer)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="546" />
+              <mxPoint x="540" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-plctrl-create-pod" edge="1" parent="1" source="pipeline-ctrl" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0.7;entryY=1;entryDx=0;entryDy=0;" target="api-server" value="create Vertex Pod spec&#xa;(with ResourceClaim ref RCT)">
+          <mxGeometry relative="1" x="0.1011" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="560" y="568" />
+              <mxPoint x="560" y="420" />
+              <mxPoint x="740" y="420" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-api-podspec" edge="1" parent="1" source="api-server" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="vertex-pod-spec" value="stores&#xa;Pod spec">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="880" y="340" />
+              <mxPoint x="880" y="417" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-sched-api" edge="1" parent="1" source="kube-scheduler" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="api-server" value="watches unscheduled Pods&#xa;+ ResourceClaims">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-sched-claim" edge="1" parent="1" source="kube-scheduler" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="resource-claim" value="allocates device&#xa;(from RCT)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-sched-bind" edge="1" parent="1" source="kube-scheduler" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="vertex-pod-spec" value="binds Pod&#xa;to Node">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1250" y="608" />
+              <mxPoint x="1250" y="417" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-kubelet-api" edge="1" parent="1" source="kubelet-box" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="api-server" value="watches bound Pods&#xa;on this Node">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="780" y="770" />
+              <mxPoint x="700" y="770" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-kubelet-claim" edge="1" parent="1" source="kubelet-box" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;dashed=1;exitX=1;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="resource-claim" value="reads allocated&#xa;ResourceClaim">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1065" y="830" />
+              <mxPoint x="1065" y="710" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-kubelet-pod" edge="1" parent="1" source="kubelet-box" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0;entryDx=0;entryDy=0;" target="vertex-pod1" value="starts container">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="560" y="1060" />
+              <mxPoint x="390" y="1060" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-dranet-whereabouts-req" edge="1" parent="1" source="dranet" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" target="whereabouts" value="IP allocation&#xa;request">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-whereabouts-dranet-res" edge="1" parent="1" source="whereabouts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;dashed=1;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;" target="dranet" value="allocated IP&#xa;response">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-dranet-nic1" edge="1" parent="1" source="dranet" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="nic1" value="attach NIC to Pod netns&#xa;+ configure IP">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="480" y="922" />
+              <mxPoint x="480" y="1110" />
+              <mxPoint x="300" y="1110" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-dranet-nic2" edge="1" parent="1" source="dranet" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=10;exitX=0;exitY=0.7;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="nic2" value="attach NIC to Pod netns&#xa;+ configure IP">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="520" y="935" />
+              <mxPoint x="520" y="1120" />
+              <mxPoint x="580" y="1120" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-rdma" edge="1" parent="1" source="nic1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jetSize=auto;html=1;fontSize=11;fontStyle=1;strokeColor=#CC0000;strokeWidth=3;startArrow=open;startFill=0;" target="nic2" value="RDMA Data Transfer&#xa;(via Secondary NIC)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="300" y="1210" />
+              <mxPoint x="580" y="1210" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend-border" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;fontSize=11;fontStyle=1;verticalAlign=top;align=left;spacingLeft=5;spacingTop=2;" value="Legend" vertex="1">
+          <mxGeometry height="310" width="225" x="1220" y="1030" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-purple" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontSize=10;" value="K8s Core Component" vertex="1">
+          <mxGeometry height="25" width="205" x="1230" y="1058" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-blue" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" value="CRD / Custom Resource (user YAML)" vertex="1">
+          <mxGeometry height="25" width="205" x="1230" y="1090" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-green" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" value="Controller / Webhook (our code)" vertex="1">
+          <mxGeometry height="25" width="205" x="1230" y="1122" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-deploy" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=10;dashed=1;" value="Deployment boundary" vertex="1">
+          <mxGeometry height="25" width="205" x="1230" y="1154" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-orange" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="External / Plugin (DaemonSet)" vertex="1">
+          <mxGeometry height="25" width="205" x="1230" y="1186" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-gray" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" value="K8s Native Resource (in etcd)" vertex="1">
+          <mxGeometry height="25" width="205" x="1230" y="1218" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-nic" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=10;" value="Secondary NIC (RDMA capable)" vertex="1">
+          <mxGeometry height="25" width="205" x="1230" y="1250" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-solid" parent="1" style="text;html=1;fontSize=10;align=left;" value="── request / action" vertex="1">
+          <mxGeometry height="18" width="160" x="1230" y="1283" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-dashed" parent="1" style="text;html=1;fontSize=10;align=left;" value="- - response / event" vertex="1">
+          <mxGeometry height="18" width="160" x="1230" y="1305" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

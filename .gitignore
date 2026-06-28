@@ -31,6 +31,13 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# macOS
+.DS_Store
+
+# draw.io temp files
+.$*.bkp
+.$*.dtmp
+
 # CLAUDE
 CLAUDE.md
 
