@@ -1,0 +1,21 @@
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: g1m4-pipeline-with-binding
+  namespace: default
+  annotations:
+    gpu-direct-comm.numaproj.io/numa-network-edges: |
+      [{"from":"filter-resize","to":"inference","numaNetwork":"pipeline1-multi-network","connectionType":"direct"}]
+spec:
+  vertices:
+    - name: filter-resize
+      source:
+        generator:
+          rpu: 1
+          duration: 60s
+    - name: inference
+      sink:
+        log: {}
+  edges:
+    - from: filter-resize
+      to: inference

@@ -1,0 +1,18 @@
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: g1m4-pipeline-no-annotation
+  namespace: default
+spec:
+  vertices:
+    - name: source-vertex
+      source:
+        generator:
+          rpu: 1
+          duration: 60s
+    - name: sink-vertex
+      sink:
+        log: {}
+  edges:
+    - from: source-vertex
+      to: sink-vertex

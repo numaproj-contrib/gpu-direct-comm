@@ -1,0 +1,8 @@
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: InterStepBufferService
+metadata:
+  name: default
+  namespace: default
+spec:
+  jetstream:
+    version: "latest"
