@@ -47,3 +47,4 @@ CLAUDE.md
 # local dev tool binaries
 numaflow_dev_env_tools/
 bin/
+webhook-whereabouts-numanetwork

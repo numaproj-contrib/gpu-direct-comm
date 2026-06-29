@@ -187,6 +187,13 @@ func main() {
 		os.Exit(1)
 	}
 	mgr.GetWebhookServer().Register(
+		"/mutate-numaflow-numaproj-io-v1alpha1-pipeline",
+		&webhook.Admission{Handler: &webhookv1alpha1.PipelineMutator{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}},
+	)
+	mgr.GetWebhookServer().Register(
 		"/validate-numaflow-numaproj-io-v1alpha1-pipeline",
 		&webhook.Admission{Handler: &webhookv1alpha1.PipelineValidator{
 			Client: mgr.GetClient(),

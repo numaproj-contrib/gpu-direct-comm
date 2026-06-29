@@ -46,11 +46,11 @@ func buildWebhookScheme(t *testing.T) *runtime.Scheme {
 }
 
 // newNumaNetwork returns a minimal NumaNetwork for seeding the fake client.
-func newNumaNetwork(ns, name string) *numaflowv1alpha1.NumaNetwork {
+func newNumaNetwork(name string) *numaflowv1alpha1.NumaNetwork { //nolint:unparam
 	return &numaflowv1alpha1.NumaNetwork{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: ns,
+			Namespace: "default",
 		},
 		Spec: numaflowv1alpha1.NumaNetworkSpec{
 			RefDeviceClass: numaflowv1alpha1.RefDeviceClass{Name: "vf.nvidia.dra.net"},
@@ -132,7 +132,7 @@ func TestPipelineValidator_Handle(t *testing.T) {
 				AnnotationNumaNetworkEdges: `[{"from":"filter-resize","to":"inference","numaNetwork":"pipeline1-multi-network","connectionType":"direct"}]`,
 			},
 			edges:       validEdgeList,
-			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(ns, nnName)},
+			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
 			wantAllowed: true,
 		},
 		{

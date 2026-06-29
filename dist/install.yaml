@@ -471,7 +471,7 @@ spec:
   - gpu-direct-comm-webhook-service.gpu-direct-comm-system.svc.cluster.local
   issuerRef:
     kind: Issuer
-    name: selfsigned-issuer
+    name: gpu-direct-comm-selfsigned-issuer
   secretName: webhook-server-cert
 ---
 apiVersion: cert-manager.io/v1
@@ -484,6 +484,34 @@ metadata:
   namespace: gpu-direct-comm-system
 spec:
   selfSigned: {}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: gpu-direct-comm-system/gpu-direct-comm-serving-cert
+  name: gpu-direct-comm-mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: gpu-direct-comm-webhook-service
+      namespace: gpu-direct-comm-system
+      path: /mutate-numaflow-numaproj-io-v1alpha1-pipeline
+  failurePolicy: Fail
+  name: mpipeline.numaproj.io
+  rules:
+  - apiGroups:
+    - numaflow.numaproj.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pipelines
+  sideEffects: None
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
