@@ -15,7 +15,20 @@ spec:
           duration: 60s
     - name: inference
       sink:
-        log: {}
+        udsink:
+          container:
+            image: my-inference-server:latest
+            # GPU ResourceClaim のコンテナレベル参照:
+            # GPUはCDI経由でコンテナ固有の設定（デバイスファイル・env var）が必要なため参照が必要。
+            # NICはPodのnetwork namespaceに付与されるため、コンテナレベルの参照は不要。
+            resources:
+              claims:
+                - name: gpu
+      # GPU ResourceClaim（Podレベル）: DRAがPodにGPUデバイスを割り当てる
+      # NICのRCTはwebhookが自動注入するため、ここには記述不要
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: a100
   edges:
     - from: filter-resize
       to: inference
