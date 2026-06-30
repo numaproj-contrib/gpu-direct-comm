@@ -40,6 +40,7 @@ go.work.sum
 
 # CLAUDE
 CLAUDE.md
+.codegraph/
 
 # ECC plugin install (regenerable via ~/everything-claude-code/scripts/install-apply.js)
 .claude/
