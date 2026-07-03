@@ -19,8 +19,9 @@ limitations under the License.
 //
 // Wire types in this file mirror the JSON contract used by dranet's webhook
 // protocol (sigs.k8s.io/dranet/pkg/cloudprovider/webhook and pkg/apis).
-// We define them locally because importing dranet pulls in k8s 0.36.x which
-// is incompatible with this project's controller-runtime v0.23.3.
+// We define them locally because dranet v1.3.0 does not yet export the
+// BYODP webhook types (ProfileRequest, Capabilities), and the exported
+// types have incompatible JSON tags or missing fields (see ADR-0011).
 package ipam
 
 // ProfileRequest is the JSON body dranet sends to /GetProfileConfig and

@@ -93,7 +93,3 @@ type NumaNetworkList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []NumaNetwork `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&NumaNetwork{}, &NumaNetworkList{})
-}
