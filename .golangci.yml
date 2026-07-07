@@ -32,6 +32,8 @@ linters:
       rules:
         - name: comment-spacings
         - name: import-shadowing
+    goconst:
+      min-occurrences: 5
     modernize:
       disable:
         - omitzero
@@ -45,6 +47,12 @@ linters:
           - dupl
           - lll
         path: internal/*
+      - linters:
+          - goconst
+        path: _test\.go$
+      - linters:
+          - goconst
+        path: internal/webhook/
     paths:
       - third_party$
       - builtin$

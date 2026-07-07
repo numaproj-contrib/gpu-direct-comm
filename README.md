@@ -33,7 +33,7 @@
 - [cert-manager](https://cert-manager.io/) for webhook TLS certificates
 - [whereabouts](https://github.com/k8snetworkingplumbingwg/whereabouts) for IPAM (used via the BYODP webhook provider)
 
-For step-by-step setup instructions, see [Development Environment Setup](docs/setup-guide.md).
+For step-by-step setup instructions, see [Environment Setup](docs/setup-guide.md).
 
 ## Quick Start
 
@@ -141,7 +141,7 @@ config/
   webhook/                       # ValidatingWebhook configuration
   certmanager/                   # cert-manager certificate
   rbac/                          # RBAC roles and bindings
-  samples/                       # Example manifests
+  testdata/                      # Test manifests (E2E, webhook validation)
   webhook-whereabouts-numanetwork/  # IPAM webhook provider deployment
 internal/
   controller/                    # NumaNetwork reconciler
