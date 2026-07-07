@@ -23,7 +23,14 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"regexp"
 )
+
+// validClaimUID matches the characters permitted in a claim UID before it is
+// embedded in the semicolon-delimited CNI_ARGS value. Without this check, a
+// claimUID containing ';' or '=' could inject additional CNI_ARGS key/value
+// pairs that whereabouts parses (e.g. overriding K8S_POD_NAMESPACE).
+var validClaimUID = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // CNIExecutor abstracts the whereabouts CNI binary execution so that tests
 // can substitute a fake without touching the filesystem or running real binaries.
@@ -77,6 +84,10 @@ func (w *WhereaboutsExecutor) Del(ctx context.Context, conf []byte, claimUID str
 }
 
 func (w *WhereaboutsExecutor) run(ctx context.Context, command string, conf []byte, claimUID string) ([]byte, error) {
+	if !validClaimUID.MatchString(claimUID) {
+		return nil, fmt.Errorf("invalid claim UID %q: must match %s", claimUID, validClaimUID.String())
+	}
+
 	cmd := exec.CommandContext(ctx, w.BinPath)
 	cmd.Stdin = bytes.NewReader(conf)
 	cmd.Env = []string{
@@ -85,6 +96,11 @@ func (w *WhereaboutsExecutor) run(ctx context.Context, command string, conf []by
 		"CNI_NETNS=/dev/null",
 		"CNI_IFNAME=eth0",
 		"CNI_PATH=" + w.CNIPath,
+		// whereabouts requires a non-empty K8S_POD_NAME to tag the IP
+		// reservation's ownership. dranet's ProfileRequest carries no pod
+		// identity (only claim_uid), so we use claimUID as a stand-in;
+		// orphan reconciliation by pod identity is out of scope (ADR-0008).
+		"CNI_ARGS=IgnoreUnknown=1;K8S_POD_NAME=" + claimUID + ";K8S_POD_NAMESPACE=dranet-webhook",
 	}
 
 	var stdout, stderr bytes.Buffer
