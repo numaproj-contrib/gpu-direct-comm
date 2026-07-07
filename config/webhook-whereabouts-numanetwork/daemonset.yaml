@@ -18,6 +18,13 @@ spec:
       containers:
         - name: webhook
           image: webhook-whereabouts-numanetwork:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           args:
             - --listen-addr=:8443
             - --whereabouts-bin=/opt/cni/bin/whereabouts
@@ -28,6 +35,9 @@ spec:
           volumeMounts:
             - name: cni-bin
               mountPath: /opt/cni/bin
+              readOnly: true
+            - name: cni-net-d
+              mountPath: /etc/cni/net.d
               readOnly: true
           resources:
             limits:
@@ -52,4 +62,8 @@ spec:
         - name: cni-bin
           hostPath:
             path: /opt/cni/bin
+            type: DirectoryOrCreate
+        - name: cni-net-d
+          hostPath:
+            path: /etc/cni/net.d
             type: DirectoryOrCreate
