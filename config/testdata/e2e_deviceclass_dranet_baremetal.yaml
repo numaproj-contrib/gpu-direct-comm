@@ -1,0 +1,17 @@
+# E2E DeviceClass narrowed to SR-IOV VFs only (bare-metal).
+# VFs are identified by three attribute conditions:
+#   - dra.net/sriov == false      : VFs are not SR-IOV capable (only PFs are)
+#   - dra.net/virtual == false    : excludes software interfaces (tunl0, veth, etc.)
+#   - dra.net/sriovVfs is absent  : PFs always carry this field (>= 0); VFs do not
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: dranet-e2e-baremetal
+spec:
+  selectors:
+    - cel:
+        expression: >
+          device.driver == "dra.net" &&
+          device.attributes["dra.net"].sriov == false &&
+          device.attributes["dra.net"].virtual == false &&
+          !has(device.attributes["dra.net"].sriovVfs)
