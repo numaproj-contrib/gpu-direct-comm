@@ -1,0 +1,14 @@
+# E2E DeviceClass narrowed to SR-IOV VFs only (bare-metal).
+# DRANET sets dra.net/isSriovVf = true exclusively on VFs;
+# PFs, non-SR-IOV physical NICs, and software interfaces lack this attribute.
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: dranet-e2e-baremetal
+spec:
+  selectors:
+    - cel:
+        expression: >
+          device.driver == "dra.net" &&
+          has(device.attributes["dra.net"].isSriovVf) &&
+          device.attributes["dra.net"].isSriovVf == true

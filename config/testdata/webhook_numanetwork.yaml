@@ -7,4 +7,4 @@ spec:
   refDeviceClass:
     name: vf.nvidia.dra.net
   refResourceClaimDranet:
-    ipRange: "192.168.10.0/24"
+    ipRange: "192.168.140.0/24"
