@@ -553,7 +553,7 @@ kubectl get resourceslice -o yaml | grep -A5 'ifName'
 
 `DeviceClass` は、DRANET が公開した `ResourceSlice` デバイスのうちどれが割当対象かをフィルタする CEL セレクタを定義します。DRANET の**後に**作成する必要があります。セレクタが参照する属性（例: `dra.net/sriov`）は、DRANET がデバイスを公開して初めて存在するためです。
 
-ベアメタルの DeviceClass は SR-IOV VF のみにフィルタします。3つの属性条件を使用します: `dra.net/sriov == false`（VF 自体は SR-IOV 対応ではない）、`dra.net/virtual == false`（ソフトウェアインターフェースを除外）、`dra.net/sriovVfs` が存在しない（PF はこのフィールドを必ず持つが VF は持たない）:
+ベアメタルの DeviceClass は SR-IOV VF のみにフィルタします。DRANET は VF に対してのみ `dra.net/isSriovVf: true` を設定します。PF、非 SR-IOV 物理 NIC、ソフトウェアインターフェースにはこの属性自体が存在しません:
 
 ```bash
 kubectl apply -f config/testdata/e2e_deviceclass_dranet_baremetal.yaml

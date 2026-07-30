@@ -243,13 +243,7 @@ kubectl -n kube-system patch ds dranet --type=json -p='[
 
 E2E フローを開始する前に、DRANET が各ワーカーノードの SR-IOV VF を検出していることを確認します。
 
-DRANET はノード上のすべての NIC を `ResourceSlice` オブジェクト（ノードごと・ドライバごとに1つ）内のデバイスとして公開します。各デバイスには `dra.net/*` 属性のセットが付与されます。VF は以下の3つの属性条件の組み合わせで他のデバイスと区別できます:
-
-| 条件 | 理由 |
-|------|------|
-| `dra.net/sriov == false` | VF 自体は SR-IOV 対応デバイスではない（PF のみが対応）。 |
-| `dra.net/virtual == false` | `tunl0` や `veth` などソフトウェアで作られたインターフェースを除外する。 |
-| `dra.net/sriovVfs` フィールドが存在しない | PF はこのフィールドを必ず持つ（作成した VF 数、0以上）。VF にはこのフィールド自体が存在しない。 |
+DRANET はノード上のすべての NIC を `ResourceSlice` オブジェクト（ノードごと・ドライバごとに1つ）内のデバイスとして公開します。各デバイスには `dra.net/*` 属性のセットが付与されます。DRANET は VF に対してのみ `dra.net/isSriovVf: true` を設定します。PF、非 SR-IOV 物理 NIC、ソフトウェアインターフェースにはこの属性自体が存在しません。
 
 以下のコマンドで全ノードの VF デバイスのみを一覧できます:
 
@@ -259,11 +253,7 @@ kubectl get resourceslices -o json | jq -r '
   | select(.spec.driver == "dra.net")
   | .spec.nodeName as $node
   | .spec.devices[]
-  | select(
-      .attributes["dra.net/sriov"].bool == false
-      and .attributes["dra.net/virtual"].bool == false
-      and (.attributes["dra.net/sriovVfs"] == null)
-    )
+  | select(.attributes["dra.net/isSriovVf"].bool == true)
   | "\($node): \(.attributes["dra.net/ifName"].string) (PCI: \(.attributes["dra.net/pciAddress"].string))"
 '
 ```
@@ -300,7 +290,7 @@ kubectl -n kube-system rollout status ds/dranet --timeout=90s
 
 #### 2. Pipeline のデプロイ（NumaNetwork + ISBSvc + Pipeline）
 
-`config/testdata/e2e_ip_assign_baremetal.yaml` は `ipRange: "192.168.10.0/24"` を使用しており、ハードウェア上の実ネットワークがその範囲を既に使用していないことを前提としています。環境と競合する場合は、マニフェストのコピーで `NumaNetwork.spec.refResourceClaimDranet.ipRange` を調整してください:
+`config/testdata/e2e_ip_assign_baremetal.yaml` は `ipRange: "192.168.140.0/24"` を使用しており、ハードウェア上の実ネットワークがその範囲を既に使用していないことを前提としています。環境と競合する場合は、マニフェストのコピーで `NumaNetwork.spec.refResourceClaimDranet.ipRange` を調整してください:
 
 ```bash
 kubectl apply -f config/testdata/e2e_ip_assign_baremetal.yaml

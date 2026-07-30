@@ -551,7 +551,7 @@ kubectl get resourceslice -o yaml | grep -A5 'ifName'
 
 A `DeviceClass` defines a CEL selector that filters which DRANET-published `ResourceSlice` devices are eligible for allocation. It must be created **after** DRANET, because the selector references attributes (e.g. `dra.net/sriov`) that only exist once DRANET has published the devices.
 
-The bare-metal DeviceClass filters to SR-IOV VFs only, using three attribute conditions: `dra.net/sriov == false` (VFs are not SR-IOV capable), `dra.net/virtual == false` (excludes software interfaces), and `dra.net/sriovVfs` absent (PFs always carry this field; VFs do not):
+The bare-metal DeviceClass filters to SR-IOV VFs only. DRANET sets `dra.net/isSriovVf: true` exclusively on VFs; PFs, non-SR-IOV physical NICs, and software interfaces lack this attribute entirely:
 
 ```bash
 kubectl apply -f config/testdata/e2e_deviceclass_dranet_baremetal.yaml

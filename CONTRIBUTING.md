@@ -243,13 +243,7 @@ E2E validation on bare-metal follows the same flow as the [Local Cluster](#local
 
 Before starting the E2E flow, confirm that DRANET has detected the SR-IOV VFs on each worker node.
 
-DRANET publishes every NIC on a node as a device inside a `ResourceSlice` object (one per node per driver). Each device carries a set of `dra.net/*` attributes. A VF can be distinguished from other devices by combining three attribute conditions:
-
-| Condition | Why |
-|-----------|-----|
-| `dra.net/sriov == false` | A VF itself is not an SR-IOV capable device (only PFs are). |
-| `dra.net/virtual == false` | Excludes software-created interfaces such as `tunl0` and `veth`. |
-| `dra.net/sriovVfs` field is absent | PFs always carry this field (the number of VFs they have created, 0 or more). VFs do not carry it at all. |
+DRANET publishes every NIC on a node as a device inside a `ResourceSlice` object (one per node per driver). Each device carries a set of `dra.net/*` attributes. DRANET sets `dra.net/isSriovVf: true` exclusively on VFs; PFs, non-SR-IOV physical NICs, and software interfaces lack this attribute entirely.
 
 Run the following command to list only VF devices across all nodes:
 
@@ -259,11 +253,7 @@ kubectl get resourceslices -o json | jq -r '
   | select(.spec.driver == "dra.net")
   | .spec.nodeName as $node
   | .spec.devices[]
-  | select(
-      .attributes["dra.net/sriov"].bool == false
-      and .attributes["dra.net/virtual"].bool == false
-      and (.attributes["dra.net/sriovVfs"] == null)
-    )
+  | select(.attributes["dra.net/isSriovVf"].bool == true)
   | "\($node): \(.attributes["dra.net/ifName"].string) (PCI: \(.attributes["dra.net/pciAddress"].string))"
 '
 ```
@@ -300,7 +290,7 @@ If your nodes cannot reach `gcr.io`, mirror the image to your private registry f
 
 #### 2. Deploy the Pipeline (NumaNetwork + ISBSvc + Pipeline)
 
-`config/testdata/e2e_ip_assign_baremetal.yaml` uses `ipRange: "192.168.10.0/24"`, which assumes no real network on your hardware already occupies that range. Adjust the `NumaNetwork.spec.refResourceClaimDranet.ipRange` in a copy of the manifest if it conflicts with your environment:
+`config/testdata/e2e_ip_assign_baremetal.yaml` uses `ipRange: "192.168.140.0/24"`, which assumes no real network on your hardware already occupies that range. Adjust the `NumaNetwork.spec.refResourceClaimDranet.ipRange` in a copy of the manifest if it conflicts with your environment:
 
 ```bash
 kubectl apply -f config/testdata/e2e_ip_assign_baremetal.yaml
