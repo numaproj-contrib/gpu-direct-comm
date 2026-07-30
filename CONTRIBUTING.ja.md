@@ -196,7 +196,7 @@ for pod in $(kubectl get pods -l numaflow.numaproj.io/pipeline-name=e2e-gpu-dire
     kubectl get resourceclaim "$claim" -o jsonpath='{range .status.devices[*]}    Interface: {.networkData.interfaceName}  MAC: {.networkData.hardwareAddress}  IPs: {.networkData.ips[*]}{"\n"}{end}'
   done
 done
-# 期待値: in と out の両方の vertex Pod で dummy0 に 192.168.10.0/24 内の IP が割り当てられている
+# 期待値: in と out の両方の vertex Pod で dummy0 に 192.168.140.0/24 内の IP が割り当てられている
 ```
 
 #### 6. Pipeline 削除時に IP が解放されることを検証

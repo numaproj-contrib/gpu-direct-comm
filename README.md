@@ -53,7 +53,7 @@ spec:
   refDeviceClass:
     name: vf.nvidia.dra.net   # name of the DRA DeviceClass for the NIC type
   refResourceClaimDranet:
-    ipRange: "192.168.10.0/24"
+    ipRange: "192.168.140.0/24"
 ```
 
 ```bash

@@ -13,7 +13,7 @@ spec:
   refDeviceClass:
     name: dranet-e2e-local
   refResourceClaimDranet:
-    ipRange: "192.168.10.0/24"
+    ipRange: "192.168.140.0/24"
 ---
 apiVersion: numaflow.numaproj.io/v1alpha1
 kind: InterStepBufferService

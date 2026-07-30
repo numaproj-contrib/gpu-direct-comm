@@ -196,7 +196,7 @@ for pod in $(kubectl get pods -l numaflow.numaproj.io/pipeline-name=e2e-gpu-dire
     kubectl get resourceclaim "$claim" -o jsonpath='{range .status.devices[*]}    Interface: {.networkData.interfaceName}  MAC: {.networkData.hardwareAddress}  IPs: {.networkData.ips[*]}{"\n"}{end}'
   done
 done
-# Expect an IP inside 192.168.10.0/24 on dummy0 for both in and out vertex Pods
+# Expect an IP inside 192.168.140.0/24 on dummy0 for both in and out vertex Pods
 ```
 
 #### 6. Verify IPs are released on Pipeline deletion
