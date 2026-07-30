@@ -37,19 +37,11 @@ For step-by-step setup instructions, see [Environment Setup](docs/setup-guide.md
 
 ## Quick Start
 
-### 1. Install CRDs
+> Complete the [Environment Setup](docs/setup-guide.md) first — all prerequisites (k3d cluster, Numaflow, DRANET, whereabouts, cert-manager) and gpu-direct-comm itself must be deployed before following the steps below.
 
-```bash
-make install
-```
+### 1. Create a NumaNetwork resource
 
-### 2. Deploy the controller
-
-```bash
-make deploy IMG=<your-registry>/gpu-direct-comm:<tag>
-```
-
-### 3. Create a NumaNetwork resource
+A working sample is available at [`config/testdata/e2e_ip_assign_local.yaml`](config/testdata/e2e_ip_assign_local.yaml) (bundled with ISBSvc and Pipeline).
 
 ```yaml
 apiVersion: numaflow.numaproj.io/v1alpha1
@@ -70,9 +62,9 @@ kubectl apply -f my-numanetwork.yaml
 
 After reconciliation, the controller creates a `ResourceClaimTemplate` named `my-network-rct` in the same namespace.
 
-### 4. Bind Pipeline edges to the NumaNetwork
+### 2. Bind Pipeline edges to the NumaNetwork
 
-Add the annotation to your Numaflow Pipeline to declare which edges should use GPU Direct Communication:
+Add the annotation to your Numaflow Pipeline to declare which edges should use GPU Direct Communication. A working sample (NumaNetwork + ISBSvc + Pipeline bundled) is available at [`config/testdata/e2e_ip_assign_local.yaml`](config/testdata/e2e_ip_assign_local.yaml).
 
 ```yaml
 apiVersion: numaflow.numaproj.io/v1alpha1
@@ -153,21 +145,13 @@ docs/diagrams/                   # Architecture diagrams (.drawio source)
 
 ## Testing
 
-### Unit Tests
-
-Unit tests run against a local control plane provided by [envtest](https://book.kubebuilder.io/reference/envtest):
-
 ```bash
-make test
+make test      # Unit tests (envtest — no running cluster required)
+make test-e2e  # End-to-end tests (Kind cluster, created automatically)
+make lint      # golangci-lint
 ```
 
-### End-to-End Tests
-
-E2E tests run on a Kind cluster (created automatically by the target):
-
-```bash
-make test-e2e
-```
+E2E tests are available for both Local (k3d) and Bare-metal clusters. See [CONTRIBUTING.md](CONTRIBUTING.md#e2e-tests) for the full walkthrough and testing guidelines.
 
 ## Roadmap
 
