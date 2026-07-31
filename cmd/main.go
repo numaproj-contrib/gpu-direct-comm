@@ -200,6 +200,13 @@ func main() {
 			Scheme: mgr.GetScheme(),
 		}},
 	)
+	mgr.GetWebhookServer().Register(
+		"/mutate-v1-pod-vertex-domain",
+		&webhook.Admission{Handler: &webhookv1alpha1.VertexDomainMutator{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}},
+	)
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

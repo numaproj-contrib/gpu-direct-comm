@@ -39,6 +39,8 @@ const (
 	numaflowLabelVertexName = "numaflow.numaproj.io/vertex-name"
 )
 
+// +kubebuilder:rbac:groups=numaflow.numaproj.io,resources=pipelines,verbs=get;list;watch
+
 // VertexDomainMutator injects a vertexDomain FQDN label into Vertex Pods
 // that participate in a numaNetwork direct binding.
 type VertexDomainMutator struct {
