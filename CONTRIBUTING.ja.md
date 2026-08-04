@@ -117,17 +117,43 @@ E2E テストは `NumaNetwork.spec.refResourceClaimDranet.ipRange` をエンド�
 
 #### 1. 各ノードに dummy インターフェースを作成
 
+本番環境では SR-IOV VF（物理 NIC の仮想分割）が GPU 間直接通信用の Secondary NIC として使われます。ローカル k3d クラスタには SR-IOV ハードウェアがないため、Linux の **dummy インターフェース** を実 NIC の代役として使用します。DRANET 自身の upstream E2E テストも同じ手法を採用しています。
+
+k3d は各 Kubernetes ノードを Docker コンテナとして実行します。まずノードコンテナが稼働していることを確認します:
+
+```bash
+docker ps --filter "name=k3d-numaflow-cluster" --format "{{.Names}}"
+# 期待値: k3d-numaflow-cluster-server-0, -agent-0, -agent-1
+```
+
+各ノードコンテナ内に `dummy0` インターフェースを作成し、有効化します:
+
 ```bash
 for node in k3d-numaflow-cluster-server-0 k3d-numaflow-cluster-agent-0 k3d-numaflow-cluster-agent-1; do
   docker exec "$node" sh -c "ip link show dummy0 >/dev/null 2>&1 || (ip link add dummy0 type dummy && ip link set up dev dummy0)"
 done
 ```
 
-DRANET が検出したことを確認します（出力に `dra.net/type: dummy` があることを確認）:
+- `ip link add dummy0 type dummy` — `dummy0` という名前の仮想ネットワークインターフェースを作成します。
+- `ip link set up dev dummy0` — インターフェースを UP（有効）にし、DRANET が検出できるようにします。
+
+DRANET（各ノードで DaemonSet として稼働）はネットワークインターフェースを自動検出し、Kubernetes の **ResourceSlice** オブジェクトとしてデバイスを公開します。このステップがないと DRA ResourceClaim に割り当て可能なデバイスが存在せず、E2E の Pod は `Pending` のまま停止します。
+
+DRANET が各ノードで `dummy0` を検出したことを確認します。`dra.net/ifName` は `ip link add` で作成した Linux インターフェース名がそのまま入るため、このフィールドでフィルタすることで目的のインターフェースが DRA に認識されているかを確認できます:
 
 ```bash
-kubectl get resourceslice -o yaml | grep -A2 'ifName: dummy0'
+kubectl get resourceslice -o json | jq -r '
+  .items[]
+  | select(.spec.driver == "dra.net")
+  | .spec.nodeName as $node
+  | .spec.devices[]
+  | select(.attributes["dra.net/ifName"].string == "dummy0")
+  | "\($node): ifName=\(.attributes["dra.net/ifName"].string), type=\(.attributes["dra.net/type"].string)"
+'
+# 期待値: 各ノードごとに ifName=dummy0, type=dummy の行が 1 行ずつ表示される
 ```
+
+出力にノードが欠けている場合、DRANET がまだそのインターフェースを検出していません。数秒待ってから再実行してください — DRANET は定期的に再スキャンを行います。
 
 #### 2. DeviceClass がデプロイされていることを確認
 

@@ -79,6 +79,22 @@ kubectl get pods -n numaflow-system
 >
 > This builds the Numaflow container image and installs it into the cluster (again targeting `k3d-numaflow-cluster` via `current-context`), in place of the `kubectl apply` above. For the full Numaflow build environment setup (Go, Rust, protoc, etc.), see the [Numaflow Development](https://numaflow.numaproj.io/development/development/) documentation.
 
+#### InterStepBufferService (ISBSvc) deployment
+
+Numaflow Pipelines require an InterStepBufferService (JetStream) to be running and healthy before they can be created — Numaflow's own ValidatingWebhook rejects Pipeline creation if the ISBSvc is not yet ready. Deploy it once after Numaflow installation:
+
+```bash
+kubectl apply -f config/testdata/isbsvc.yaml
+kubectl wait --for=jsonpath='{.status.phase}'=Running isbsvc/default --timeout=120s
+```
+
+Verify the JetStream Pods are running:
+
+```bash
+kubectl get pods -l numaflow.numaproj.io/isbsvc-name=default
+# Expected: isbsvc-default-js-0, isbsvc-default-js-1, isbsvc-default-js-2 — all Running, READY 3/3
+```
+
 ### gpu-direct-comm environment setup
 
 #### 3. DRANET installation

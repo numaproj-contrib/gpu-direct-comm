@@ -103,7 +103,7 @@ make lint
 
 E2E tests validate `NumaNetwork.spec.refResourceClaimDranet.ipRange` end to end: a `dummy0` interface is created on every k3d node, DRANET publishes it as an allocatable device, and `webhook-whereabouts-numanetwork` assigns it an IP from `ipRange` via `whereabouts` when a Numaflow Pipeline with `connectionType: direct` edges is deployed. The Mutating Webhook injects the ResourceClaimTemplate into both vertices of the edge, so both vertex Pods receive a secondary NIC. Real SR-IOV VF hardware is not required — `dummy0` stands in for a real Secondary NIC (dranet's own upstream E2E tests use the same technique).
 
-**Prerequisite**: Complete the [Local Cluster](docs/setup-guide.md#1-local-cluster) environment setup first — all components (`whereabouts`, DRANET, `dranet` DeviceClass, controller manager, `webhook-whereabouts-numanetwork`) must be deployed and `READY`. Unit tests (`make test`) must pass before running E2E tests.
+**Prerequisite**: Complete the [Local Cluster](docs/setup-guide.md#1-local-cluster) environment setup first — all components (`whereabouts`, DRANET, `dranet` DeviceClass, controller manager, `webhook-whereabouts-numanetwork`, ISBSvc) must be deployed and `READY`. Unit tests (`make test`) must pass before running E2E tests.
 
 To run all steps at once, use the helper script:
 
@@ -115,17 +115,43 @@ The individual steps below explain what the script does.
 
 #### 1. Create a dummy interface on every node
 
+In production, SR-IOV VFs on physical NICs serve as the Secondary NIC for GPU-direct communication. In a local k3d cluster there is no SR-IOV hardware, so a Linux **dummy interface** stands in for a real NIC. DRANET's own upstream E2E tests use the same technique.
+
+k3d runs each Kubernetes node as a Docker container. Verify the node containers are running:
+
+```bash
+docker ps --filter "name=k3d-numaflow-cluster" --format "{{.Names}}"
+# Expected: k3d-numaflow-cluster-server-0, -agent-0, -agent-1
+```
+
+Create a `dummy0` interface inside each node container and bring it up:
+
 ```bash
 for node in k3d-numaflow-cluster-server-0 k3d-numaflow-cluster-agent-0 k3d-numaflow-cluster-agent-1; do
   docker exec "$node" sh -c "ip link show dummy0 >/dev/null 2>&1 || (ip link add dummy0 type dummy && ip link set up dev dummy0)"
 done
 ```
 
-Confirm DRANET picked it up (look for `dra.net/type: dummy` in the output):
+- `ip link add dummy0 type dummy` creates a virtual network interface named `dummy0`.
+- `ip link set up dev dummy0` enables the interface so DRANET can detect it.
+
+DRANET (running as a DaemonSet on every node) automatically discovers network interfaces and publishes them as devices in a Kubernetes **ResourceSlice** object. Without this step, there is no allocatable device for DRA ResourceClaims, and E2E Pods stay `Pending`.
+
+Confirm DRANET detected `dummy0` on every node. `dra.net/ifName` is the Linux interface name that `ip link add` created, so filtering on it confirms the exact interface is visible to DRA:
 
 ```bash
-kubectl get resourceslice -o yaml | grep -A2 'ifName: dummy0'
+kubectl get resourceslice -o json | jq -r '
+  .items[]
+  | select(.spec.driver == "dra.net")
+  | .spec.nodeName as $node
+  | .spec.devices[]
+  | select(.attributes["dra.net/ifName"].string == "dummy0")
+  | "\($node): ifName=\(.attributes["dra.net/ifName"].string), type=\(.attributes["dra.net/type"].string)"
+'
+# Expected: one line per node showing ifName=dummy0, type=dummy
 ```
+
+If a node is missing from the output, DRANET has not yet detected the interface. Wait a few seconds and re-run the command — DRANET rescans periodically.
 
 #### 2. Verify the DeviceClass is deployed
 
@@ -165,9 +191,9 @@ kubectl -n kube-system rollout status ds/dranet --timeout=90s
 
 > dranet fails fast (`Fatal`, immediate crash) if it cannot reach `--webhook-url`'s `/health` endpoint at startup. This is why `webhook-whereabouts-numanetwork` must already be deployed and `READY` *before* this step — switching dranet to webhook mode first, then deploying the webhook, will crash-loop.
 
-#### 4. Deploy the Pipeline (NumaNetwork + ISBSvc + Pipeline)
+#### 4. Deploy the Pipeline (NumaNetwork + Pipeline)
 
-`e2e_ip_assign_local.yaml` bundles a NumaNetwork, an InterStepBufferService, and a Pipeline with a `connectionType: direct` edge. The Mutating Webhook injects `e2e-numanetwork-rct` into both the `in` (source) and `out` (sink) vertices:
+`e2e_ip_assign_local.yaml` bundles a NumaNetwork and a Pipeline with a `connectionType: direct` edge. The Mutating Webhook injects `e2e-numanetwork-rct` into both the `in` (source) and `out` (sink) vertices:
 
 ```bash
 kubectl apply -f config/testdata/e2e_ip_assign_local.yaml
@@ -237,7 +263,7 @@ E2E validation on bare-metal follows the same flow as the [Local Cluster](#local
 - The DRANET pinned image must be pulled from a registry (no `k3d image import`).
 - IP verification uses SSH + `nsenter` instead of `docker exec`.
 
-**Prerequisite**: Complete the [Bare-metal Cluster](docs/setup-guide.md#2-bare-metal-cluster) environment setup first — including SR-IOV VF preparation, the cluster/GPU/DRA/Numaflow layer via `numaflow-dra-ansible`, then DRANET, the `dranet` DeviceClass, whereabouts, cert-manager, and gpu-direct-comm components (CRD, controller manager, `webhook-whereabouts-numanetwork`) must all be deployed and `READY`.
+**Prerequisite**: Complete the [Bare-metal Cluster](docs/setup-guide.md#2-bare-metal-cluster) environment setup first — including SR-IOV VF preparation, the cluster/GPU/DRA/Numaflow layer via `numaflow-dra-ansible`, then DRANET, the `dranet` DeviceClass, whereabouts, cert-manager, ISBSvc, and gpu-direct-comm components (CRD, controller manager, `webhook-whereabouts-numanetwork`) must all be deployed and `READY`.
 
 #### 0. Verify SR-IOV VFs are recognized by DRANET
 
@@ -288,7 +314,7 @@ If your nodes cannot reach `gcr.io`, mirror the image to your private registry f
 
 > As with the Local Cluster, check whether an official DRANET release now includes BYODP before reusing this pinned tag — see [Local Cluster step 3](#3-configure-dranet-for-byodp-webhook-integration) for the rationale and how to check.
 
-#### 2. Deploy the Pipeline (NumaNetwork + ISBSvc + Pipeline)
+#### 2. Deploy the Pipeline (NumaNetwork + Pipeline)
 
 `config/testdata/e2e_ip_assign_baremetal.yaml` uses `ipRange: "192.168.140.0/24"`, which assumes no real network on your hardware already occupies that range. Adjust the `NumaNetwork.spec.refResourceClaimDranet.ipRange` in a copy of the manifest if it conflicts with your environment:
 

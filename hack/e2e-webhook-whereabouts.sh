@@ -43,7 +43,7 @@ kubectl -n kube-system patch ds dranet --type=json -p='[
 ]'
 kubectl -n kube-system rollout status ds/dranet --timeout=60s
 
-echo "=== Step 5: Deploy Pipeline (NumaNetwork + ISBSvc + Pipeline) ==="
+echo "=== Step 5: Deploy Pipeline (NumaNetwork + Pipeline) ==="
 kubectl apply -f config/testdata/e2e_ip_assign_local.yaml
 kubectl get resourceclaimtemplate -A
 kubectl wait --for=condition=ready pod -l "numaflow.numaproj.io/pipeline-name=${PIPELINE_NAME}" --timeout=120s
