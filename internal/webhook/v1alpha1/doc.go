@@ -6,6 +6,12 @@
 // a NumaNetwork in the same namespace. Pipelines without the
 // annotation pass through unchanged (non-breaking).
 //
-// The webhook runs inside the controller-manager process and is
+// VertexDomainMutator is a MutatingWebhook for Pod CREATE that injects
+// a vertexDomain FQDN label into Vertex Pods participating in a
+// numaNetwork direct binding. The FQDN follows the format
+// <vertex>.<pipeline>.<namespace>.vertexdomain.local and is consumed
+// by the vertexDomainManager (G2-M3) for DNS record registration.
+//
+// All webhooks run inside the controller-manager process and are
 // registered on the manager's webhook server (port 9443).
 package v1alpha1

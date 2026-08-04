@@ -31,6 +31,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - numaflow.numaproj.io
+  resources:
+  - pipelines
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - resource.k8s.io
   resources:
   - resourceclaimtemplates
