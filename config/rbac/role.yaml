@@ -1,0 +1,44 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - numaflow.numaproj.io
+  resources:
+  - numanetworks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - numaflow.numaproj.io
+  resources:
+  - numanetworks/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - numaflow.numaproj.io
+  resources:
+  - numanetworks/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - resource.k8s.io
+  resources:
+  - resourceclaimtemplates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

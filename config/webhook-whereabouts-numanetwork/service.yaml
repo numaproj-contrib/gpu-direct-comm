@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-whereabouts-numanetwork
+  namespace: system
+  labels:
+    app.kubernetes.io/name: webhook-whereabouts-numanetwork
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8443
+      targetPort: 8443
+      protocol: TCP
+      name: webhook
+  selector:
+    app.kubernetes.io/name: webhook-whereabouts-numanetwork

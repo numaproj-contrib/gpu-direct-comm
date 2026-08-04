@@ -1,0 +1,47 @@
+# E2E pipeline for bare-metal: the edge uses gpu-direct (connectionType: direct).
+# source (generator) → sink (log)
+# The mutating webhook injects e2e-numanetwork-rct into both the "in"
+# and "out" vertices, so both pods receive a secondary NIC (SR-IOV VF).
+# No GPU required; generator + log run without errors.
+---
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: NumaNetwork
+metadata:
+  name: e2e-numanetwork
+  namespace: default
+spec:
+  refDeviceClass:
+    name: dranet-e2e-baremetal
+  refResourceClaimDranet:
+    ipRange: "192.168.140.0/24"
+---
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: InterStepBufferService
+metadata:
+  name: default
+  namespace: default
+spec:
+  jetstream:
+    version: "latest"
+---
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: e2e-gpu-direct-pipeline
+  namespace: default
+  annotations:
+    gpu-direct-comm.numaproj.io/numa-network-edges: |
+      [{"from":"in","to":"out","numaNetwork":"e2e-numanetwork","connectionType":"direct"}]
+spec:
+  vertices:
+    - name: in
+      source:
+        generator:
+          rpu: 1
+          duration: 1s
+    - name: out
+      sink:
+        log: {}
+  edges:
+    - from: in
+      to: out

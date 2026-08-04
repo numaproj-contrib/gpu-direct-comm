@@ -1,0 +1,12 @@
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: NumaNetwork
+metadata:
+  labels:
+    app.kubernetes.io/name: gpu-direct-comm
+    app.kubernetes.io/managed-by: kustomize
+  name: numanetwork-sample
+spec:
+  refDeviceClass:
+    name: vf.nvidia.dra.net
+  refResourceClaimDranet:
+    ipRange: "192.168.140.0/24"

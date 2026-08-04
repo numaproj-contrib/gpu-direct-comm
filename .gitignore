@@ -31,5 +31,21 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# macOS
+.DS_Store
+
+# draw.io temp files
+.$*.bkp
+.$*.dtmp
+
+# CLAUDE
+CLAUDE.md
+.codegraph/
+
 # ECC plugin install (regenerable via ~/everything-claude-code/scripts/install-apply.js)
 .claude/
+
+# local dev tool binaries
+numaflow_dev_env_tools/
+bin/
+webhook-whereabouts-numanetwork

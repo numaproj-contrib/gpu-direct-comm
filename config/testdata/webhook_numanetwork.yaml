@@ -1,0 +1,10 @@
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: NumaNetwork
+metadata:
+  name: pipeline1-multi-network
+  namespace: default
+spec:
+  refDeviceClass:
+    name: vf.nvidia.dra.net
+  refResourceClaimDranet:
+    ipRange: "192.168.140.0/24"

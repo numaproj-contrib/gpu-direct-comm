@@ -1,0 +1,52 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-numaflow-numaproj-io-v1alpha1-pipeline
+  failurePolicy: Fail
+  name: mpipeline.numaproj.io
+  rules:
+  - apiGroups:
+    - numaflow.numaproj.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pipelines
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-numaflow-numaproj-io-v1alpha1-pipeline
+  failurePolicy: Fail
+  name: vpipeline.numaproj.io
+  rules:
+  - apiGroups:
+    - numaflow.numaproj.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pipelines
+  sideEffects: None
