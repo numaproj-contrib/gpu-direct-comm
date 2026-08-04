@@ -16,15 +16,6 @@ spec:
     ipRange: "192.168.140.0/24"
 ---
 apiVersion: numaflow.numaproj.io/v1alpha1
-kind: InterStepBufferService
-metadata:
-  name: default
-  namespace: default
-spec:
-  jetstream:
-    version: "latest"
----
-apiVersion: numaflow.numaproj.io/v1alpha1
 kind: Pipeline
 metadata:
   name: e2e-gpu-direct-pipeline
