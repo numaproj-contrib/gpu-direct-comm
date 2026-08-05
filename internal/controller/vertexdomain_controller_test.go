@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -114,7 +115,7 @@ func TestVertexDomainReconciler(t *testing.T) {
 			},
 			Status: corev1.PodStatus{
 				ResourceClaimStatuses: []corev1.PodResourceClaimStatus{
-					{Name: "nic", ResourceClaimName: strPtr(claimName)},
+					{Name: "nic", ResourceClaimName: ptr.To(claimName)},
 				},
 			},
 		}
@@ -396,5 +397,3 @@ func TestVertexDomainReconciler_StoreDeleteError(t *testing.T) {
 		t.Error("finalizer should remain when Store.Delete fails")
 	}
 }
-
-func strPtr(s string) *string { return &s }
