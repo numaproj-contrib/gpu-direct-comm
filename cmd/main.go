@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -37,6 +38,7 @@ import (
 
 	numaflowv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/api/v1alpha1"
 	"github.com/numaproj-contrib/gpu-direct-comm/internal/controller"
+	"github.com/numaproj-contrib/gpu-direct-comm/internal/dns"
 	webhookv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/internal/webhook/v1alpha1"
 	resourcev1 "k8s.io/api/resource/v1"
 	// +kubebuilder:scaffold:imports
@@ -64,6 +66,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var etcdEndpoints string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -82,6 +85,8 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(&etcdEndpoints, "etcd-endpoints", "http://10.43.200.53:2379",
+		"Comma-separated list of etcd endpoints for DNS record storage")
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -184,6 +189,20 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "numanetwork")
+		os.Exit(1)
+	}
+
+	dnsStore, err := dns.NewEtcdStore(strings.Split(etcdEndpoints, ","))
+	if err != nil {
+		setupLog.Error(err, "Failed to create DNS store")
+		os.Exit(1)
+	}
+	if err := (&controller.VertexDomainReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Store:  dnsStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "vertexdomain")
 		os.Exit(1)
 	}
 	mgr.GetWebhookServer().Register(
