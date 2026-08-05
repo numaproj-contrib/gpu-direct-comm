@@ -86,7 +86,7 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.StringVar(&etcdEndpoints, "etcd-endpoints", "http://10.43.200.53:2379",
-		"Comma-separated list of etcd endpoints for DNS record storage")
+		"Comma-separated etcd endpoints for the CoreDNS DNS record store (ADR-002)")
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -191,20 +191,6 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "numanetwork")
 		os.Exit(1)
 	}
-
-	dnsStore, err := dns.NewEtcdStore(strings.Split(etcdEndpoints, ","))
-	if err != nil {
-		setupLog.Error(err, "Failed to create DNS store")
-		os.Exit(1)
-	}
-	if err := (&controller.VertexDomainReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Store:  dnsStore,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "vertexdomain")
-		os.Exit(1)
-	}
 	mgr.GetWebhookServer().Register(
 		"/mutate-numaflow-numaproj-io-v1alpha1-pipeline",
 		&webhook.Admission{Handler: &webhookv1alpha1.PipelineMutator{
@@ -226,6 +212,20 @@ func main() {
 			Scheme: mgr.GetScheme(),
 		}},
 	)
+
+	dnsStore, err := dns.NewEtcdStore(strings.Split(etcdEndpoints, ","))
+	if err != nil {
+		setupLog.Error(err, "Failed to create DNS store")
+		os.Exit(1)
+	}
+	if err := (&controller.VertexDomainReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Store:  dnsStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "vertexdomain")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
