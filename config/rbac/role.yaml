@@ -5,6 +5,21 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/finalizers
+  verbs:
+  - update
+- apiGroups:
   - numaflow.numaproj.io
   resources:
   - numanetworks
@@ -34,6 +49,14 @@ rules:
   - numaflow.numaproj.io
   resources:
   - pipelines
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - resource.k8s.io
+  resources:
+  - resourceclaims
   verbs:
   - get
   - list
