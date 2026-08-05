@@ -223,6 +223,71 @@ kubectl -n kube-system get pods -l app.kubernetes.io/name=webhook-whereabouts-nu
 # Expected: one Pod per node — all Running, READY 1/1
 ```
 
+##### 7-4. CoreDNS etcd backend setup
+
+This step sets up name resolution for the `vertexdomain.local` zone using CoreDNS's [etcd plugin](https://coredns.io/plugins/etcd/). It deploys two components:
+
+- **Dedicated etcd** — the backend where the vertexDomainManager (deployed in a later milestone) writes DNS records. This is a separate instance from the Kubernetes API server's etcd
+- **CoreDNS custom config** — a `coredns-custom` ConfigMap that adds a `vertexdomain.local` server block to the existing CoreDNS
+
+> **Design rationale**: The API server's etcd is not shared because only kube-apiserver is designed to access it directly, and the data formats differ (SkyDNS-compatible JSON vs Kubernetes resource protobuf). CoreDNS server blocks are independent per zone, so a failure in the `vertexdomain.local` zone does not affect existing `.cluster.local` name resolution. See ADR-002 for details.
+
+Deploy both etcd and the CoreDNS config with kustomize:
+
+```bash
+kubectl apply -k config/coredns-etcd/
+kubectl -n kube-system wait --for=condition=Ready pod/etcd-coredns-0 --timeout=60s
+```
+
+Restart CoreDNS to pick up the new config:
+
+```bash
+kubectl -n kube-system rollout restart deployment/coredns
+kubectl -n kube-system rollout status deployment/coredns --timeout=60s
+```
+
+Verify that etcd is healthy and CoreDNS has loaded the `vertexdomain.local` zone:
+
+```bash
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
+# Expected: 127.0.0.1:2379 is healthy: successfully committed proposal: took = ...
+
+kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
+# Expected: log output mentioning vertexdomain.local.:53 (no errors)
+```
+
+Verify end-to-end by registering a test A record in etcd and resolving it via CoreDNS:
+
+```bash
+# Register a test A record
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl put \
+  /skydns/local/vertexdomain/default/pipeline1/vertex-in \
+  '{"host":"192.168.140.10"}'
+
+# Start a test Pod and resolve via CoreDNS
+kubectl run dns-test --restart=Never --image=busybox:1.37 -- sleep 3600
+kubectl wait --for=condition=Ready pod/dns-test --timeout=30s
+kubectl exec dns-test -- nslookup vertex-in.pipeline1.default.vertexdomain.local
+# Expected:
+#   Server:    10.43.0.10
+#   Address:   10.43.0.10:53
+#   Name:      vertex-in.pipeline1.default.vertexdomain.local
+#   Address:   192.168.140.10
+
+# Delete the record and confirm NXDOMAIN
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl del \
+  /skydns/local/vertexdomain/default/pipeline1/vertex-in
+kubectl exec dns-test -- nslookup vertex-in.pipeline1.default.vertexdomain.local
+# Expected: ** server can't find ... NXDOMAIN
+
+# Clean up the test Pod
+kubectl delete pod dns-test
+```
+
+> This deploys a single-instance etcd with `emptyDir` storage — data is lost on Pod restart. This is acceptable for development: the vertexDomainManager reconciles Pod state and re-creates DNS records on startup. Production HA is out of scope for MVP.
+
+> **Service CIDR note**: The `etcd-coredns` Service uses a fixed ClusterIP (`10.43.200.53`). CoreDNS runs with `dnsPolicy: Default` (node DNS) and cannot resolve cluster-internal Service names, so the etcd endpoint must be an IP address. If your environment uses a Service CIDR other than the k3s default (`10.43.0.0/16`), update both the `clusterIP` in `etcd-standalone.yaml` and the `endpoint` in `coredns-custom-configmap.yaml`.
+
 ### Verify
 
 Run all checks at once to confirm the environment is fully operational:
@@ -263,6 +328,12 @@ kubectl get pods -n gpu-direct-comm-system
 # DaemonSets (DRANET + whereabouts + webhook-whereabouts-numanetwork)
 kubectl -n kube-system get ds whereabouts dranet webhook-whereabouts-numanetwork
 # Expected: all DaemonSets READY on every node
+
+# CoreDNS etcd backend
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
+# Expected: 127.0.0.1:2379 is healthy
+kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
+# Expected: log output mentioning vertexdomain.local.:53 (no errors)
 ```
 
 ---

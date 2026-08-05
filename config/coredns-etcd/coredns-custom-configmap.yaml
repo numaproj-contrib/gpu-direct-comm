@@ -1,0 +1,23 @@
+# CoreDNS custom server block for vertexdomain.local zone.
+# k3s automatically imports coredns-custom ConfigMap entries into the Corefile.
+# Keys with *.server suffix are added as new server blocks (not merged into .:53).
+# See ADR-002 for design rationale.
+#
+# The endpoint uses the fixed ClusterIP of the etcd-coredns Service
+# (defined in etcd-standalone.yaml). CoreDNS runs with dnsPolicy: Default
+# and cannot resolve cluster-internal Service names.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  vertexdomain.server: |
+    vertexdomain.local:53 {
+      errors
+      log
+      etcd {
+        path /skydns
+        endpoint http://10.43.200.53:2379
+      }
+    }
