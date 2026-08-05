@@ -94,8 +94,8 @@ func (r *VertexDomainReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	// Extract Second NIC IP from ResourceClaim status.
-	ip, err := r.extractSecondNICIP(ctx, pod)
+	// Extract Secondary NIC IP from ResourceClaim status.
+	ip, err := r.extractSecondaryNICIP(ctx, pod)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -112,9 +112,9 @@ func (r *VertexDomainReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{}, nil
 }
 
-// extractSecondNICIP finds the first IP from ResourceClaim NetworkData
+// extractSecondaryNICIP finds the first IP from ResourceClaim NetworkData
 // associated with this Pod. Returns empty string if not yet available.
-func (r *VertexDomainReconciler) extractSecondNICIP(ctx context.Context, pod *corev1.Pod) (string, error) {
+func (r *VertexDomainReconciler) extractSecondaryNICIP(ctx context.Context, pod *corev1.Pod) (string, error) {
 	for _, claimStatus := range pod.Status.ResourceClaimStatuses {
 		if claimStatus.ResourceClaimName == nil {
 			continue
