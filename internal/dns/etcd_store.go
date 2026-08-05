@@ -27,8 +27,9 @@ import (
 )
 
 const (
-	defaultDialTimeout = 5 * time.Second
-	skyDNSPrefix       = "/skydns"
+	defaultDialTimeout    = 5 * time.Second
+	defaultRequestTimeout = 5 * time.Second
+	skyDNSPrefix          = "/skydns"
 )
 
 // skyDNSRecord is the JSON format that CoreDNS etcd plugin expects.
@@ -90,6 +91,9 @@ func (s *EtcdStore) Put(ctx context.Context, fqdn string, ip string) error {
 		return fmt.Errorf("marshal record: %w", err)
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
+	defer cancel()
+
 	if _, err := s.client.Put(ctx, key, string(val)); err != nil {
 		return fmt.Errorf("put etcd key %s: %w", key, err)
 	}
@@ -102,6 +106,9 @@ func (s *EtcdStore) Delete(ctx context.Context, fqdn string) error {
 	if err != nil {
 		return err
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
+	defer cancel()
 
 	if _, err := s.client.Delete(ctx, key); err != nil {
 		return fmt.Errorf("delete etcd key %s: %w", key, err)
@@ -116,6 +123,9 @@ func (s *EtcdStore) Get(ctx context.Context, fqdn string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
+	defer cancel()
 
 	resp, err := s.client.Get(ctx, key)
 	if err != nil {
