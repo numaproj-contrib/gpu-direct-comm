@@ -9,7 +9,6 @@ set -euo pipefail
 #   - k3d cluster "numaflow-cluster" is running
 #   - kubectl is available
 
-CLUSTER_NAME="${CLUSTER_NAME:-numaflow-cluster}"
 TEST_POD="dns-e2e-test"
 TEST_FQDN="vertex-in.pipeline1.default.vertexdomain.local"
 TEST_IP="192.168.140.10"
@@ -31,7 +30,13 @@ kubectl -n kube-system rollout restart deployment/coredns
 kubectl -n kube-system rollout status deployment/coredns --timeout=60s
 
 echo "=== Step 3: Verify CoreDNS loaded vertexdomain.local zone ==="
-sleep 3
+for i in $(seq 1 10); do
+  if kubectl -n kube-system logs -l k8s-app=kube-dns --tail=30 2>/dev/null | grep -q "vertexdomain.local.:53"; then
+    break
+  fi
+  echo "  Waiting for CoreDNS to log zone load... (${i}/10)"
+  sleep 3
+done
 if kubectl -n kube-system logs -l k8s-app=kube-dns --tail=30 | grep -q "vertexdomain.local.:53"; then
   echo "  OK: vertexdomain.local zone loaded"
 else

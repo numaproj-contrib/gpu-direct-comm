@@ -49,7 +49,7 @@ spec:
           command:
             - etcd
             - --listen-client-urls=http://0.0.0.0:2379
-            - --advertise-client-urls=http://etcd-coredns.kube-system.svc:2379
+            - --advertise-client-urls=http://10.43.200.53:2379
             - --data-dir=/var/lib/etcd
           ports:
             - containerPort: 2379
