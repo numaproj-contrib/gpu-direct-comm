@@ -207,6 +207,71 @@ kubectl -n kube-system get pods -l app=webhook-whereabouts-numanetwork
 # 期待値: ノードごとに 1 Pod — すべて Running, READY 1/1
 ```
 
+##### 7-4. CoreDNS etcd バックエンドのセットアップ
+
+CoreDNS の [etcd プラグイン](https://coredns.io/plugins/etcd/) を使用して、`vertexdomain.local` ゾーンの名前解決を提供します。このステップでは以下の 2 つをデプロイします：
+
+- **専用 etcd** — vertexDomainManager（後続マイルストーン）が DNS レコードを書き込むバックエンド。Kubernetes API server 用の etcd とは独立したインスタンス
+- **CoreDNS カスタム設定** — 既存 CoreDNS に `vertexdomain.local` ゾーンのサーバブロックを追加する `coredns-custom` ConfigMap
+
+> **設計背景**: Kubernetes API server 用の etcd は共用しません。API server の etcd は kube-apiserver だけが直接アクセスする設計であり、データ形式も異なります（SkyDNS 互換 JSON vs Kubernetes リソースの protobuf）。CoreDNS のサーバブロックはゾーンごとに独立しているため、`vertexdomain.local` ゾーンの障害は既存の `.cluster.local` 名前解決に影響しません。詳細は ADR-002 を参照してください。
+
+kustomize で etcd と CoreDNS 設定をまとめてデプロイします：
+
+```bash
+kubectl apply -k config/coredns-etcd/
+kubectl -n kube-system wait --for=condition=Ready pod/etcd-coredns-0 --timeout=60s
+```
+
+設定を反映するため CoreDNS を再起動します：
+
+```bash
+kubectl -n kube-system rollout restart deployment/coredns
+kubectl -n kube-system rollout status deployment/coredns --timeout=60s
+```
+
+etcd が正常であること、CoreDNS が `vertexdomain.local` ゾーンをロードしていることを確認します：
+
+```bash
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
+# 期待値: 127.0.0.1:2379 is healthy: successfully committed proposal: took = ...
+
+kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
+# 期待値: vertexdomain.local.:53 に関するログ出力（エラーなし）
+```
+
+動作確認として、etcd にテスト用 A レコードを登録し、名前解決できることを検証します：
+
+```bash
+# テスト用 A レコードを etcd に登録
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl put \
+  /skydns/local/vertexdomain/default/pipeline1/vertex-in \
+  '{"host":"192.168.140.10"}'
+
+# テスト用 Pod を起動し、CoreDNS 経由で名前解決
+kubectl run dns-test --restart=Never --image=busybox:1.37 -- sleep 3600
+kubectl wait --for=condition=Ready pod/dns-test --timeout=30s
+kubectl exec dns-test -- nslookup vertex-in.pipeline1.default.vertexdomain.local
+# 期待値:
+#   Server:    10.43.0.10
+#   Address:   10.43.0.10:53
+#   Name:      vertex-in.pipeline1.default.vertexdomain.local
+#   Address:   192.168.140.10
+
+# テスト用レコードを削除し、NXDOMAIN を確認
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl del \
+  /skydns/local/vertexdomain/default/pipeline1/vertex-in
+kubectl exec dns-test -- nslookup vertex-in.pipeline1.default.vertexdomain.local
+# 期待値: ** server can't find ... NXDOMAIN
+
+# テスト用 Pod をクリーンアップ
+kubectl delete pod dns-test
+```
+
+> これは `emptyDir` ストレージを使用する単一インスタンスの etcd です — Pod 再起動時にデータは失われます。開発段階ではこれで問題ありません：vertexDomainManager は Pod の状態を reconcile し、起動時に DNS レコードを再作成します。本番環境向けの HA 構成は MVP のスコープ外です。
+
+> **Service CIDR に関する注意**: `etcd-coredns` Service には固定 ClusterIP（`10.43.200.53`）を設定しています。CoreDNS は `dnsPolicy: Default`（ノード DNS）で動作するため、クラスタ内 Service 名では etcd に接続できず、IP アドレスを直接指定する必要があるためです。k3s のデフォルト Service CIDR（`10.43.0.0/16`）以外の環境では、`etcd-standalone.yaml` の `clusterIP` と `coredns-custom-configmap.yaml` の `endpoint` を合わせて変更してください。
+
 ### 確認
 
 全チェックを一括実行して、環境が完全に動作していることを確認します。
@@ -247,6 +312,12 @@ kubectl get pods -n gpu-direct-comm-system
 # DaemonSet（DRANET + whereabouts + webhook-whereabouts-numanetwork）
 kubectl -n kube-system get ds whereabouts dranet webhook-whereabouts-numanetwork
 # 期待値: 全 DaemonSet が全ノードで READY
+
+# CoreDNS etcd バックエンド
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
+# 期待値: 127.0.0.1:2379 is healthy
+kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
+# 期待値: vertexdomain.local.:53 に関するログ出力（エラーなし）
 ```
 
 ---
