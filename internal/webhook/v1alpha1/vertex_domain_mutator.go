@@ -40,9 +40,10 @@ const (
 )
 
 // +kubebuilder:rbac:groups=numaflow.numaproj.io,resources=pipelines,verbs=get;list;watch
+// +kubebuilder:webhook:path=/mutate-v1-pod-vertex-domain,mutating=true,failurePolicy=ignore,sideEffects=None,groups="",resources=pods,verbs=create,versions=v1,name=mvertexdomain.numaproj.io,admissionReviewVersions=v1
 
-// VertexDomainMutator injects a vertexDomain FQDN label into Vertex Pods
-// that participate in a numaNetwork direct binding.
+// VertexDomainMutator injects a vertexDomain marker label and FQDN annotation
+// into Vertex Pods that participate in a numaNetwork direct binding.
 type VertexDomainMutator struct {
 	Client client.Client
 	Scheme *runtime.Scheme
@@ -100,7 +101,12 @@ func (m *VertexDomainMutator) Handle(ctx context.Context, req admission.Request)
 	if pod.Labels == nil {
 		pod.Labels = map[string]string{}
 	}
-	pod.Labels[LabelVertexDomain] = fqdn
+	pod.Labels[LabelVertexDomain] = LabelVertexDomainValue
+
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[AnnotationVertexDomainFQDN] = fqdn
 
 	patched, err := json.Marshal(pod)
 	if err != nil {
