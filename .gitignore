@@ -38,6 +38,11 @@ go.work.sum
 .$*.bkp
 .$*.dtmp
 
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+
 # CLAUDE
 CLAUDE.md
 .codegraph/
