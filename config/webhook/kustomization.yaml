@@ -2,5 +2,8 @@ resources:
 - manifests.yaml
 - service.yaml
 
+patches:
+- path: patches/vertex_domain_object_selector.yaml
+
 configurations:
 - kustomizeconfig.yaml

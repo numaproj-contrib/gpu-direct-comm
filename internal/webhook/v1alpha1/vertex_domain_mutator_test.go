@@ -88,6 +88,16 @@ func extractPodLabel(t *testing.T, podJSON []byte, labelKey string) string {
 	return pod.Labels[labelKey]
 }
 
+// extractPodAnnotation unmarshals the (potentially patched) Pod JSON and returns an annotation value.
+func extractPodAnnotation(t *testing.T, podJSON []byte, annotationKey string) string {
+	t.Helper()
+	var pod corev1.Pod
+	if err := json.Unmarshal(podJSON, &pod); err != nil {
+		t.Fatalf("unmarshal Pod: %v", err)
+	}
+	return pod.Annotations[annotationKey]
+}
+
 func TestVertexDomainMutator_Handle(t *testing.T) {
 	const ns = "default"
 	const pipelineName = "e2e-gpu-direct-pipeline"
@@ -111,8 +121,8 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 		seedNNs []*numaflowv1alpha1.NumaNetwork
 
 		wantAllowed bool
-		// wantLabel is the expected vertex-domain label value (empty if not expecting a patch)
-		wantLabel string
+		// wantFQDN is the expected FQDN stored in AnnotationVertexDomainFQDN (empty if not expecting a patch)
+		wantFQDN string
 		// wantNoPatches is true when no patches are expected
 		wantNoPatches bool
 		// denyContains is checked only when wantAllowed == false
@@ -146,7 +156,7 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 			}),
 			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
 			wantAllowed: true,
-			wantLabel:   "in.e2e-gpu-direct-pipeline.default.vertexdomain.local",
+			wantFQDN:    "in.e2e-gpu-direct-pipeline.default.vertexdomain.local",
 		},
 		{
 			name:          "(d) vertex Pod, Pipeline without numa-network-edges annotation → Allowed, no patches",
@@ -188,7 +198,7 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 			}),
 			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
 			wantAllowed: true,
-			wantLabel:   "out.e2e-gpu-direct-pipeline.default.vertexdomain.local",
+			wantFQDN:    "out.e2e-gpu-direct-pipeline.default.vertexdomain.local",
 		},
 		{
 			name:      "(h) vertex Pod, only non-direct bindings → Allowed, no patches",
@@ -243,11 +253,15 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 				return
 			}
 
-			// Apply patches and verify label
+			// Apply patches and verify label marker + annotation FQDN
 			patched := applyPatches(t, raw, resp.Patches)
 			gotLabel := extractPodLabel(t, patched, LabelVertexDomain)
-			if gotLabel != tc.wantLabel {
-				t.Errorf("vertex-domain label: got %q, want %q", gotLabel, tc.wantLabel)
+			if gotLabel != LabelVertexDomainValue {
+				t.Errorf("vertex-domain label: got %q, want %q", gotLabel, LabelVertexDomainValue)
+			}
+			gotFQDN := extractPodAnnotation(t, patched, AnnotationVertexDomainFQDN)
+			if gotFQDN != tc.wantFQDN {
+				t.Errorf("vertex-domain-fqdn annotation: got %q, want %q", gotFQDN, tc.wantFQDN)
 			}
 		})
 	}
