@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -108,11 +109,43 @@ func (m *VertexDomainMutator) Handle(ctx context.Context, req admission.Request)
 	}
 	pod.Annotations[AnnotationVertexDomainFQDN] = fqdn
 
+	targets, err := collectTargetFQDNs(vertexName, bindings, pipelineName, ns)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("collect target FQDNs: %w", err))
+	}
+	if len(targets) > 0 {
+		targetsValue := strings.Join(targets, ",")
+		for i := range pod.Spec.Containers {
+			pod.Spec.Containers[i].Env = append(pod.Spec.Containers[i].Env, corev1.EnvVar{
+				Name:  EnvVertexDomainTargets,
+				Value: targetsValue,
+			})
+		}
+	}
+
 	patched, err := json.Marshal(pod)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("marshal patched Pod: %w", err))
 	}
 	return admission.PatchResponseFromRaw(req.Object.Raw, patched)
+}
+
+// collectTargetFQDNs returns FQDNs for the destination vertices of the given
+// vertex in direct bindings. Only bindings where vertex is the From side are
+// considered (ADR-004: single-direction communication).
+func collectTargetFQDNs(vertex string, bindings []EdgeNumaNetworkBinding, pipeline, namespace string) ([]string, error) {
+	var targets []string
+	for _, b := range bindings {
+		if b.ConnectionType != ConnectionTypeDirect || b.From != vertex {
+			continue
+		}
+		fqdn, err := BuildVertexDomain(b.To, pipeline, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("build target FQDN for %q: %w", b.To, err)
+		}
+		targets = append(targets, fqdn)
+	}
+	return targets, nil
 }
 
 // vertexInDirectBindings returns true if the vertex participates in at least
