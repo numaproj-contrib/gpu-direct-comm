@@ -33,12 +33,6 @@ webhooks:
       path: /mutate-v1-pod-vertex-domain
   failurePolicy: Ignore
   name: mvertexdomain.numaproj.io
-  objectSelector:
-    matchExpressions:
-    - key: numaflow.numaproj.io/pipeline-name
-      operator: Exists
-    - key: numaflow.numaproj.io/vertex-name
-      operator: Exists
   rules:
   - apiGroups:
     - ""
