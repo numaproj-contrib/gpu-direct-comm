@@ -65,8 +65,13 @@ func (r *VertexDomainReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, fmt.Errorf("get Pod: %w", err)
 	}
 
-	fqdn := pod.Labels[webhookv1alpha1.LabelVertexDomain]
+	if _, hasLabel := pod.Labels[webhookv1alpha1.LabelVertexDomain]; !hasLabel {
+		return ctrl.Result{}, nil
+	}
+
+	fqdn := pod.Annotations[webhookv1alpha1.AnnotationVertexDomainFQDN]
 	if fqdn == "" {
+		log.V(1).Info("vertex-domain label present but FQDN annotation missing, skipping")
 		return ctrl.Result{}, nil
 	}
 
