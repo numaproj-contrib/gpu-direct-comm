@@ -21,6 +21,15 @@ import (
 	"testing"
 )
 
+func TestVertexDomainConstants(t *testing.T) {
+	if LabelVertexDomainValue != "true" {
+		t.Errorf("LabelVertexDomainValue = %q, want %q", LabelVertexDomainValue, "true")
+	}
+	if AnnotationVertexDomainFQDN == "" {
+		t.Error("AnnotationVertexDomainFQDN must not be empty")
+	}
+}
+
 func TestBuildVertexDomain(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -70,12 +79,11 @@ func TestBuildVertexDomain(t *testing.T) {
 			errMsg:    "namespace",
 		},
 		{
-			name:      "FQDN exceeds 63 character label limit",
+			name:      "long FQDN succeeds when stored in annotation",
 			vertex:    "very-long-vertex-name-that-goes-on",
 			pipeline:  "very-long-pipeline-name",
 			namespace: "default",
-			wantErr:   true,
-			errMsg:    "63",
+			want:      "very-long-vertex-name-that-goes-on.very-long-pipeline-name.default.vertexdomain.local",
 		},
 		{
 			name:      "non-DNS-compatible character in vertex",

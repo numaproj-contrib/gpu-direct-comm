@@ -22,15 +22,19 @@ import (
 )
 
 const (
-	// LabelVertexDomain is the label key for the vertexDomain FQDN injected
-	// into Vertex Pods by the VertexDomainMutator webhook.
+	// LabelVertexDomain is the label key used as a marker on Vertex Pods
+	// that participate in vertexDomain DNS registration.
 	LabelVertexDomain = "gpu-direct-comm.numaproj.io/vertex-domain"
+
+	// LabelVertexDomainValue is the marker value set on LabelVertexDomain.
+	LabelVertexDomainValue = "true"
+
+	// AnnotationVertexDomainFQDN is the annotation key that stores the actual
+	// vertexDomain FQDN. Controllers read this annotation to register DNS records.
+	AnnotationVertexDomainFQDN = "gpu-direct-comm.numaproj.io/vertex-domain-fqdn"
 
 	// vertexDomainSuffix is the DNS zone suffix appended to every vertexDomain FQDN.
 	vertexDomainSuffix = "vertexdomain.local"
-
-	// maxLabelValueLength is the Kubernetes label value length limit.
-	maxLabelValueLength = 63
 )
 
 // dnsLabelRegexp matches a valid DNS label: lowercase alphanumeric, hyphens allowed
@@ -61,10 +65,6 @@ func BuildVertexDomain(vertex, pipeline, namespace string) (string, error) {
 	}
 
 	fqdn := fmt.Sprintf("%s.%s.%s.%s", vertex, pipeline, namespace, vertexDomainSuffix)
-
-	if len(fqdn) > maxLabelValueLength {
-		return "", fmt.Errorf("vertexDomain FQDN %q exceeds 63 character label value limit (%d chars)", fqdn, len(fqdn))
-	}
 
 	return fqdn, nil
 }
