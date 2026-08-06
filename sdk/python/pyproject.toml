@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vertexdomain"
+version = "0.1.0"
+description = "Resolve vertexDomain FQDNs to Secondary NIC IPs for Numaflow UDF containers"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]

@@ -12,6 +12,8 @@
 // predicate filter; the FQDN (stored in an annotation per ADR-003)
 // follows the format <vertex>.<pipeline>.<namespace>.vertexdomain.local
 // and is consumed by VertexDomainReconciler for DNS record registration.
+// For From-side Pods, the mutator also injects a VERTEX_DOMAIN_TARGETS
+// env var containing comma-separated destination FQDNs (ADR-004).
 //
 // All webhooks run inside the controller-manager process and are
 // registered on the manager's webhook server (port 9443).
