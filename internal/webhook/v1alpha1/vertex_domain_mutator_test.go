@@ -98,6 +98,24 @@ func extractPodAnnotation(t *testing.T, podJSON []byte, annotationKey string) st
 	return pod.Annotations[annotationKey]
 }
 
+// extractContainerEnv unmarshals the Pod JSON and returns the value of the named
+// env var from the first container, or empty string if not found.
+func extractContainerEnv(t *testing.T, podJSON []byte, envName string) string {
+	t.Helper()
+	var pod corev1.Pod
+	if err := json.Unmarshal(podJSON, &pod); err != nil {
+		t.Fatalf("unmarshal Pod: %v", err)
+	}
+	for _, c := range pod.Spec.Containers {
+		for _, e := range c.Env {
+			if e.Name == envName {
+				return e.Value
+			}
+		}
+	}
+	return ""
+}
+
 func TestVertexDomainMutator_Handle(t *testing.T) {
 	const ns = "default"
 	const pipelineName = "e2e-gpu-direct-pipeline"
@@ -123,6 +141,8 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 		wantAllowed bool
 		// wantFQDN is the expected FQDN stored in AnnotationVertexDomainFQDN (empty if not expecting a patch)
 		wantFQDN string
+		// wantTargets is the expected value of VERTEX_DOMAIN_TARGETS env var (empty if not expecting it)
+		wantTargets string
 		// wantNoPatches is true when no patches are expected
 		wantNoPatches bool
 		// denyContains is checked only when wantAllowed == false
@@ -149,7 +169,7 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 			wantNoPatches: true,
 		},
 		{
-			name:      "(c) vertex Pod, Pipeline has direct binding → Allowed, vertex-domain label injected",
+			name:      "(c) vertex Pod, Pipeline has direct binding → Allowed, vertex-domain label injected, targets env set",
 			podLabels: vertexLabels,
 			pipeline: pipelineUnstructured(t, ns, pipelineName, map[string]string{
 				AnnotationNumaNetworkEdges: directBinding,
@@ -157,6 +177,7 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
 			wantAllowed: true,
 			wantFQDN:    "in.e2e-gpu-direct-pipeline.default.vertexdomain.local",
+			wantTargets: "out.e2e-gpu-direct-pipeline.default.vertexdomain.local",
 		},
 		{
 			name:          "(d) vertex Pod, Pipeline without numa-network-edges annotation → Allowed, no patches",
@@ -210,6 +231,20 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 			wantAllowed:   true,
 			wantNoPatches: true,
 		},
+		{
+			name:      "(i) From vertex with multiple direct targets → env var contains comma-separated FQDNs",
+			podLabels: vertexLabels,
+			pipeline: pipelineUnstructured(t, ns, pipelineName, map[string]string{
+				AnnotationNumaNetworkEdges: `[` +
+					`{"from":"in","to":"out","numaNetwork":"` + nnName + `","connectionType":"direct"},` +
+					`{"from":"in","to":"sink","numaNetwork":"` + nnName + `","connectionType":"direct"}` +
+					`]`,
+			}),
+			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
+			wantAllowed: true,
+			wantFQDN:    "in.e2e-gpu-direct-pipeline.default.vertexdomain.local",
+			wantTargets: "out.e2e-gpu-direct-pipeline.default.vertexdomain.local,sink.e2e-gpu-direct-pipeline.default.vertexdomain.local",
+		},
 	}
 
 	for _, tc := range tests {
@@ -262,6 +297,12 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 			gotFQDN := extractPodAnnotation(t, patched, AnnotationVertexDomainFQDN)
 			if gotFQDN != tc.wantFQDN {
 				t.Errorf("vertex-domain-fqdn annotation: got %q, want %q", gotFQDN, tc.wantFQDN)
+			}
+
+			// Verify VERTEX_DOMAIN_TARGETS env var
+			gotTargets := extractContainerEnv(t, patched, EnvVertexDomainTargets)
+			if gotTargets != tc.wantTargets {
+				t.Errorf("VERTEX_DOMAIN_TARGETS env: got %q, want %q", gotTargets, tc.wantTargets)
 			}
 		})
 	}

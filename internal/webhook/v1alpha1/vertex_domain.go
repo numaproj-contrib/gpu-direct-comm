@@ -33,6 +33,11 @@ const (
 	// vertexDomain FQDN. Controllers read this annotation to register DNS records.
 	AnnotationVertexDomainFQDN = "gpu-direct-comm.numaproj.io/vertex-domain-fqdn"
 
+	// EnvVertexDomainTargets is the env var name injected into From-side Vertex
+	// Pod containers. Its value is a comma-separated list of destination FQDNs
+	// that the UDF SDK reads to resolve Secondary NIC IPs (ADR-004).
+	EnvVertexDomainTargets = "VERTEX_DOMAIN_TARGETS"
+
 	// vertexDomainSuffix is the DNS zone suffix appended to every vertexDomain FQDN.
 	vertexDomainSuffix = "vertexdomain.local"
 )
