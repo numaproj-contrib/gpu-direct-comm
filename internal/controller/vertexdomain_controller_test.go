@@ -37,6 +37,7 @@ import (
 )
 
 // mockStore records calls to Put/Get/Delete for test assertions.
+// Keys are stored as "fqdn/podID" to match the sub-key structure.
 type mockStore struct {
 	mu      sync.Mutex
 	records map[string]string
@@ -48,43 +49,62 @@ func newMockStore() *mockStore {
 	return &mockStore{records: make(map[string]string)}
 }
 
-func (m *mockStore) Put(_ context.Context, fqdn, ip string) error {
+func (m *mockStore) Put(_ context.Context, fqdn, podID, ip string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.putErr != nil {
 		return m.putErr
 	}
-	m.records[fqdn] = ip
+	m.records[fqdn+"/"+podID] = ip
 	return nil
 }
 
-func (m *mockStore) Delete(_ context.Context, fqdn string) error {
+func (m *mockStore) Delete(_ context.Context, fqdn, podID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.delErr != nil {
 		return m.delErr
 	}
-	delete(m.records, fqdn)
+	delete(m.records, fqdn+"/"+podID)
 	return nil
 }
 
-func (m *mockStore) Get(_ context.Context, fqdn string) (string, error) {
+func (m *mockStore) Get(_ context.Context, fqdn string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.records[fqdn], nil
+	prefix := fqdn + "/"
+	var ips []string
+	for k, v := range m.records {
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			ips = append(ips, v)
+		}
+	}
+	return ips, nil
 }
 
-func (m *mockStore) getRecord(fqdn string) string {
+func (m *mockStore) getRecord(fqdn, podID string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.records[fqdn]
+	return m.records[fqdn+"/"+podID]
 }
 
-func (m *mockStore) hasRecord(fqdn string) bool {
+func (m *mockStore) hasRecord(fqdn, podID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, ok := m.records[fqdn]
+	_, ok := m.records[fqdn+"/"+podID]
 	return ok
+}
+
+func (m *mockStore) hasAnyRecord(fqdn string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	prefix := fqdn + "/"
+	for k := range m.records {
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			return true
+		}
+	}
+	return false
 }
 
 func testScheme() *runtime.Scheme {
@@ -272,10 +292,10 @@ func TestVertexDomainReconciler(t *testing.T) {
 				t.Errorf("result = %+v, want %+v", result, tc.wantResult)
 			}
 			if tc.wantPut {
-				if got := store.getRecord(fqdn); got != tc.wantIP {
-					t.Errorf("store[%s] = %q, want %q", fqdn, got, tc.wantIP)
+				if got := store.getRecord(fqdn, podName); got != tc.wantIP {
+					t.Errorf("store[%s/%s] = %q, want %q", fqdn, podName, got, tc.wantIP)
 				}
-			} else if !tc.wantErr && store.hasRecord(fqdn) {
+			} else if !tc.wantErr && store.hasAnyRecord(fqdn) {
 				t.Error("store should not have a record, but it does")
 			}
 		})
@@ -291,7 +311,7 @@ func TestVertexDomainReconciler_Deletion(t *testing.T) {
 
 	scheme := testScheme()
 	store := newMockStore()
-	store.records[fqdn] = "192.168.140.10"
+	store.records[fqdn+"/"+podName] = "192.168.140.10"
 
 	now := metav1.NewTime(time.Now())
 	pod := &corev1.Pod{
@@ -334,7 +354,7 @@ func TestVertexDomainReconciler_Deletion(t *testing.T) {
 	}
 
 	// DNS record should be deleted.
-	if store.hasRecord(fqdn) {
+	if store.hasRecord(fqdn, podName) {
 		t.Error("DNS record should have been deleted")
 	}
 
@@ -361,7 +381,7 @@ func TestVertexDomainReconciler_StoreDeleteError(t *testing.T) {
 
 	scheme := testScheme()
 	store := newMockStore()
-	store.records[fqdn] = "192.168.140.10"
+	store.records[fqdn+"/"+podName] = "192.168.140.10"
 	store.delErr = fmt.Errorf("etcd unavailable")
 
 	now := metav1.NewTime(time.Now())

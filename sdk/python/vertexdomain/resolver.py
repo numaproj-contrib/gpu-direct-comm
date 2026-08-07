@@ -2,19 +2,26 @@ import os
 import socket
 
 
-def resolve(fqdn: str) -> str:
-    """Resolve a vertexDomain FQDN to an IPv4 address via DNS.
+def resolve(fqdn: str) -> list[str]:
+    """Resolve a vertexDomain FQDN to all IPv4 addresses via DNS.
 
-    Uses the cluster CoreDNS which serves the vertexdomain.local zone
-    via its etcd plugin (ADR-002).
+    When a Vertex has multiple Pods, CoreDNS returns multiple A records.
+    This function returns all unique IPs so callers can reach every Pod.
     """
     results = socket.getaddrinfo(fqdn, None, socket.AF_INET)
-    return results[0][4][0]
+    seen: set[str] = set()
+    ips: list[str] = []
+    for r in results:
+        ip = r[4][0]
+        if ip not in seen:
+            seen.add(ip)
+            ips.append(ip)
+    return ips
 
 
-def resolve_targets(env_var: str = "VERTEX_DOMAIN_TARGETS") -> dict[str, str]:
+def resolve_targets(env_var: str = "VERTEX_DOMAIN_TARGETS") -> dict[str, list[str]]:
     """Read destination FQDNs from the env var injected by VertexDomainMutator
-    and resolve each to an IPv4 address.
+    and resolve each to all IPv4 addresses.
 
     Returns an empty dict when the env var is not set (e.g. on To-side Pods).
     """
@@ -22,7 +29,7 @@ def resolve_targets(env_var: str = "VERTEX_DOMAIN_TARGETS") -> dict[str, str]:
     if not raw:
         return {}
 
-    targets: dict[str, str] = {}
+    targets: dict[str, list[str]] = {}
     for fqdn in raw.split(","):
         targets[fqdn] = resolve(fqdn)
     return targets
