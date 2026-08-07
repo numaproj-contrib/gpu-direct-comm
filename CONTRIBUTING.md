@@ -52,6 +52,8 @@ When modifying or adding a package, update the corresponding `doc.go` file to ke
 | `make build` | Build the manager binary |
 | `make test` | Run unit tests with envtest |
 | `make test-e2e` | Run e2e tests with k3d |
+| `make test-e2e-full-local` | Run full-flow E2E tests on local k3d cluster (M1–M6) |
+| `make test-e2e-full-baremetal` | Run full-flow E2E tests on baremetal cluster (SR-IOV VFs) |
 | `make lint` | Run golangci-lint |
 | `make lint-fix` | Run golangci-lint and apply automatic fixes |
 | `make manifests` | Regenerate CRD, RBAC, and webhook YAML |
@@ -254,6 +256,27 @@ kubectl -n kube-system patch ds dranet --type=json -p='[
 
 > Steps 1–6 above are currently a manual walkthrough, not an automated test target. `make test-e2e` (`test/e2e/`) is the kubebuilder-scaffolded generic suite — it spins up its own Kind cluster and does not exercise DRANET, whereabouts, or `NumaNetwork` at all. Do not run it expecting it to cover the flow described in this section.
 
+#### Full-Flow E2E Test (M1–M6 Integrated Verification)
+
+In addition to the IP assignment verification above, a full-flow test script validates the entire vertexDomain flow (M1–M6):
+
+- **M1/M4**: VertexDomainMutator injects vertexDomain annotation on Pods
+- **M3**: vertexDomainController creates and deletes DNS records in CoreDNS etcd
+- **M5**: DNS resolution of vertexDomain FQDN from a test Pod
+- **M6**: Round-robin DNS returns multiple IPs for a scaled-out vertex
+
+**Prerequisite**: Complete the [Local Cluster](docs/setup-guide.md#1-local-cluster) environment setup (including the CoreDNS etcd backend).
+
+```bash
+# Run with the helper script
+./hack/e2e-full-flow.sh --env local
+
+# Or use the Makefile target
+make test-e2e-full-local
+```
+
+The script prints OK/FAIL for each verification step and a summary at the end. See [hack/README.md](hack/README.md) for details.
+
 ### Bare-metal Cluster
 
 E2E validation on bare-metal follows the same flow as the [Local Cluster](#local-cluster) above — a NumaNetwork-annotated Pipeline is deployed and both vertex Pods must receive an IP from `NumaNetwork.spec.refResourceClaimDranet.ipRange` on their Secondary NIC (an SR-IOV VF). The differences from the Local Cluster are:
@@ -386,6 +409,20 @@ kubectl -n kube-system patch ds dranet --type=json -p='[
 ```
 
 > As on the Local Cluster, this is currently a manual walkthrough, not an automated CI target.
+
+#### Full-Flow E2E Test (M1–M6 Integrated Verification)
+
+The full-flow test script also runs on baremetal. It validates the same vertexDomain flow as the [local full-flow test](#full-flow-e2e-test-m1m6-integrated-verification).
+
+**Prerequisite**: Complete the [Bare-metal Cluster](docs/setup-guide.md#2-bare-metal-cluster) environment setup (including the CoreDNS etcd backend).
+
+```bash
+# Run with the helper script
+./hack/e2e-full-flow.sh --env baremetal
+
+# Or use the Makefile target
+make test-e2e-full-baremetal
+```
 
 ## Commit Messages
 

@@ -54,6 +54,8 @@ gpu-direct-comm への貢献に興味をお持ちいただきありがとうご�
 | `make build` | manager バイナリをビルド |
 | `make test` | envtest でユニットテストを実行 |
 | `make test-e2e` | k3d で E2E テストを実行 |
+| `make test-e2e-full-local` | k3d で統合 E2E テストを実行（M1〜M6 全検証） |
+| `make test-e2e-full-baremetal` | ベアメタルで統合 E2E テストを実行（SR-IOV VF） |
 | `make lint` | golangci-lint を実行 |
 | `make lint-fix` | golangci-lint を実行し、自動修正を適用 |
 | `make manifests` | CRD、RBAC、webhook の YAML を再生成 |
@@ -254,6 +256,27 @@ kubectl -n kube-system patch ds dranet --type=json -p='[
 
 > 上記のステップ 1〜6 は現時点では手動のウォークスルーであり、自動化されたテストターゲットではありません。`make test-e2e`（`test/e2e/`）は kubebuilder がスキャフォールドした汎用テストスイートで、独自の Kind クラスタを起動しますが、DRANET、whereabouts、`NumaNetwork` は一切テストしません。このセクションに記載されたフローをカバーすることを期待して実行しないでください。
 
+#### 統合 E2E テスト（M1〜M6 全検証）
+
+上記の IP 割当検証に加え、vertexDomain の全フロー（M1〜M6）を一貫して検証する統合テストスクリプトがあります。以下を検証します:
+
+- **M1/M4**: VertexDomainMutator による vertexDomain annotation の Pod への注入
+- **M3**: vertexDomainController による CoreDNS etcd への DNS レコード登録・削除
+- **M5**: テスト Pod から vertexDomain FQDN の DNS 名前解決
+- **M6**: スケールアウトした Vertex に対するラウンドロビン DNS（同一 FQDN から複数 IP の返却）
+
+**前提条件**: [ローカルクラスタ](docs/setup-guide.ja.md#1-ローカルクラスタ)の環境セットアップがすべて完了していること（CoreDNS etcd バックエンドを含む）。
+
+```bash
+# ヘルパースクリプトで一括実行
+./hack/e2e-full-flow.sh --env local
+
+# または Makefile ターゲット
+make test-e2e-full-local
+```
+
+スクリプトは各検証ステップで OK/FAIL を表示し、最後にサマリを出力します。詳細は [hack/README.md](hack/README.md) を参照してください。
+
 ### ベアメタルクラスタ
 
 ベアメタルでの E2E 検証は、上記の[ローカルクラスタ](#ローカルクラスタ)と同じフローに従います — NumaNetwork アノテーション付きの Pipeline がデプロイされ、両方の vertex Pod が Secondary NIC（SR-IOV VF）上で `NumaNetwork.spec.refResourceClaimDranet.ipRange` から IP を受け取る必要があります。ローカルクラスタとの違いは以下の通りです:
@@ -384,6 +407,20 @@ kubectl -n kube-system patch ds dranet --type=json -p='[
 ```
 
 > ローカルクラスタと同様に、これは現時点では手動のウォークスルーであり、自動化された CI ターゲットではありません。
+
+#### 統合 E2E テスト（M1〜M6 全検証）
+
+ベアメタル環境でも、vertexDomain の全フロー（M1〜M6）を統合検証できます。検証内容はローカルクラスタの[統合 E2E テスト](#統合-e2e-テストm1m6-全検証)と同一です。
+
+**前提条件**: [ベアメタルクラスタ](docs/setup-guide.ja.md#2-ベアメタルクラスタ)の環境セットアップがすべて完了していること（CoreDNS etcd バックエンドを含む）。
+
+```bash
+# ヘルパースクリプトで一括実行
+./hack/e2e-full-flow.sh --env baremetal
+
+# または Makefile ターゲット
+make test-e2e-full-baremetal
+```
 
 ## コミットメッセージ
 
