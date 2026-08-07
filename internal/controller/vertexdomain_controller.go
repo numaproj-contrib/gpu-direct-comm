@@ -78,7 +78,7 @@ func (r *VertexDomainReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Handle deletion: remove DNS record, then remove finalizer.
 	if !pod.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(pod, vertexDomainFinalizer) {
-			if err := r.Store.Delete(ctx, fqdn); err != nil {
+			if err := r.Store.Delete(ctx, fqdn, pod.Name); err != nil {
 				return ctrl.Result{}, fmt.Errorf("delete DNS record for %s: %w", fqdn, err)
 			}
 			log.Info("deleted DNS record", "fqdn", fqdn)
@@ -109,7 +109,7 @@ func (r *VertexDomainReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{RequeueAfter: requeueDelay}, nil
 	}
 
-	if err := r.Store.Put(ctx, fqdn, ip); err != nil {
+	if err := r.Store.Put(ctx, fqdn, pod.Name, ip); err != nil {
 		return ctrl.Result{}, fmt.Errorf("put DNS record for %s: %w", fqdn, err)
 	}
 	log.Info("registered DNS record", "fqdn", fqdn, "ip", ip)

@@ -79,12 +79,16 @@ func NewEtcdStoreFromClient(client *clientv3.Client) *EtcdStore {
 	return &EtcdStore{client: client}
 }
 
-// Put creates or updates an A record mapping fqdn to ip.
-func (s *EtcdStore) Put(ctx context.Context, fqdn string, ip string) error {
-	key, err := FQDNToEtcdKey(fqdn)
+// Put creates or updates an A record for (fqdn, podID) → ip.
+// The etcd key is structured as <fqdn-key>/<podID> so that multiple Pods
+// under the same FQDN each get their own sub-key, and CoreDNS returns all
+// of them as a round-robin A response.
+func (s *EtcdStore) Put(ctx context.Context, fqdn, podID, ip string) error {
+	base, err := FQDNToEtcdKey(fqdn)
 	if err != nil {
 		return err
 	}
+	key := base + "/" + podID
 
 	val, err := json.Marshal(skyDNSRecord{Host: ip})
 	if err != nil {
@@ -100,12 +104,13 @@ func (s *EtcdStore) Put(ctx context.Context, fqdn string, ip string) error {
 	return nil
 }
 
-// Delete removes the A record for fqdn.
-func (s *EtcdStore) Delete(ctx context.Context, fqdn string) error {
-	key, err := FQDNToEtcdKey(fqdn)
+// Delete removes the A record for (fqdn, podID).
+func (s *EtcdStore) Delete(ctx context.Context, fqdn, podID string) error {
+	base, err := FQDNToEtcdKey(fqdn)
 	if err != nil {
 		return err
 	}
+	key := base + "/" + podID
 
 	ctx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
 	defer cancel()
@@ -116,31 +121,32 @@ func (s *EtcdStore) Delete(ctx context.Context, fqdn string) error {
 	return nil
 }
 
-// Get returns the IP address associated with fqdn.
-// Returns an empty string and no error if the record does not exist.
-func (s *EtcdStore) Get(ctx context.Context, fqdn string) (string, error) {
-	key, err := FQDNToEtcdKey(fqdn)
+// Get returns all IP addresses registered under fqdn.
+// Returns an empty slice and no error if no records exist.
+func (s *EtcdStore) Get(ctx context.Context, fqdn string) ([]string, error) {
+	base, err := FQDNToEtcdKey(fqdn)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	prefix := base + "/"
 
 	ctx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
 	defer cancel()
 
-	resp, err := s.client.Get(ctx, key)
+	resp, err := s.client.Get(ctx, prefix, clientv3.WithPrefix())
 	if err != nil {
-		return "", fmt.Errorf("get etcd key %s: %w", key, err)
+		return nil, fmt.Errorf("get etcd prefix %s: %w", prefix, err)
 	}
 
-	if len(resp.Kvs) == 0 {
-		return "", nil
+	var ips []string
+	for _, kv := range resp.Kvs {
+		var rec skyDNSRecord
+		if err := json.Unmarshal(kv.Value, &rec); err != nil {
+			return nil, fmt.Errorf("unmarshal record for %s: %w", string(kv.Key), err)
+		}
+		ips = append(ips, rec.Host)
 	}
-
-	var rec skyDNSRecord
-	if err := json.Unmarshal(resp.Kvs[0].Value, &rec); err != nil {
-		return "", fmt.Errorf("unmarshal record for %s: %w", key, err)
-	}
-	return rec.Host, nil
+	return ips, nil
 }
 
 // Close closes the underlying etcd client.

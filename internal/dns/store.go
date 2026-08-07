@@ -19,14 +19,18 @@ package dns
 import "context"
 
 // Store manages DNS A records in a backend store (e.g. etcd for CoreDNS).
+//
+// Each record is keyed by (fqdn, podID), allowing multiple Pods belonging
+// to the same Vertex to register distinct A records under a single FQDN.
+// CoreDNS returns all records as a round-robin A response.
 type Store interface {
-	// Put creates or updates an A record mapping fqdn to ip.
-	Put(ctx context.Context, fqdn string, ip string) error
+	// Put creates or updates an A record for (fqdn, podID) → ip.
+	Put(ctx context.Context, fqdn, podID, ip string) error
 
-	// Delete removes the A record for fqdn.
-	Delete(ctx context.Context, fqdn string) error
+	// Delete removes the A record for (fqdn, podID).
+	Delete(ctx context.Context, fqdn, podID string) error
 
-	// Get returns the IP address associated with fqdn.
-	// Returns an empty string and no error if the record does not exist.
-	Get(ctx context.Context, fqdn string) (string, error)
+	// Get returns all IP addresses registered under fqdn.
+	// Returns an empty slice and no error if no records exist.
+	Get(ctx context.Context, fqdn string) ([]string, error)
 }

@@ -19,6 +19,7 @@ package dns
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 )
 
@@ -121,19 +122,20 @@ func TestEtcdStorePutGetDelete(t *testing.T) {
 	ctx := context.Background()
 
 	fqdn := "vertex-in.pipeline1.default.vertexdomain.local"
+	podID := "pipeline1-vertex-in-0"
 	ip := "192.168.140.10"
 
-	// Get on a non-existent record returns empty string.
+	// Get on a non-existent record returns empty slice.
 	got, err := store.Get(ctx, fqdn)
 	if err != nil {
 		t.Fatalf("Get before Put: %v", err)
 	}
-	if got != "" {
-		t.Fatalf("Get before Put = %q, want empty", got)
+	if len(got) != 0 {
+		t.Fatalf("Get before Put = %v, want empty", got)
 	}
 
 	// Put a record.
-	if err := store.Put(ctx, fqdn, ip); err != nil {
+	if err := store.Put(ctx, fqdn, podID, ip); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
@@ -142,38 +144,116 @@ func TestEtcdStorePutGetDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get after Put: %v", err)
 	}
-	if got != ip {
-		t.Errorf("Get after Put = %q, want %q", got, ip)
+	if len(got) != 1 || got[0] != ip {
+		t.Errorf("Get after Put = %v, want [%s]", got, ip)
 	}
 
-	// Put overwrites an existing record.
+	// Put with same podID overwrites the IP.
 	newIP := "192.168.140.20"
-	if err := store.Put(ctx, fqdn, newIP); err != nil {
+	if err := store.Put(ctx, fqdn, podID, newIP); err != nil {
 		t.Fatalf("Put overwrite: %v", err)
 	}
 	got, err = store.Get(ctx, fqdn)
 	if err != nil {
 		t.Fatalf("Get after overwrite: %v", err)
 	}
-	if got != newIP {
-		t.Errorf("Get after overwrite = %q, want %q", got, newIP)
+	if len(got) != 1 || got[0] != newIP {
+		t.Errorf("Get after overwrite = %v, want [%s]", got, newIP)
 	}
 
 	// Delete removes the record.
-	if err := store.Delete(ctx, fqdn); err != nil {
+	if err := store.Delete(ctx, fqdn, podID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	got, err = store.Get(ctx, fqdn)
 	if err != nil {
 		t.Fatalf("Get after Delete: %v", err)
 	}
-	if got != "" {
-		t.Errorf("Get after Delete = %q, want empty", got)
+	if len(got) != 0 {
+		t.Errorf("Get after Delete = %v, want empty", got)
 	}
 
 	// Delete on a non-existent key does not error.
-	if err := store.Delete(ctx, fqdn); err != nil {
+	if err := store.Delete(ctx, fqdn, podID); err != nil {
 		t.Fatalf("Delete non-existent: %v", err)
+	}
+}
+
+func TestEtcdStoreMultiplePods(t *testing.T) {
+	client := newEmbeddedEtcdClient(t)
+	store := NewEtcdStoreFromClient(client)
+	ctx := context.Background()
+
+	fqdn := "vertex-in.pipeline1.default.vertexdomain.local"
+	pods := []struct {
+		id string
+		ip string
+	}{
+		{"pipeline1-vertex-in-0", "192.168.140.10"},
+		{"pipeline1-vertex-in-1", "192.168.140.11"},
+		{"pipeline1-vertex-in-2", "192.168.140.12"},
+	}
+
+	for _, p := range pods {
+		if err := store.Put(ctx, fqdn, p.id, p.ip); err != nil {
+			t.Fatalf("Put %s: %v", p.id, err)
+		}
+	}
+
+	got, err := store.Get(ctx, fqdn)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("Get returned %d IPs, want 3", len(got))
+	}
+
+	wantIPs := []string{"192.168.140.10", "192.168.140.11", "192.168.140.12"}
+	slices.Sort(got)
+	slices.Sort(wantIPs)
+	for i := range wantIPs {
+		if got[i] != wantIPs[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], wantIPs[i])
+		}
+	}
+}
+
+func TestEtcdStoreDeleteSinglePod(t *testing.T) {
+	client := newEmbeddedEtcdClient(t)
+	store := NewEtcdStoreFromClient(client)
+	ctx := context.Background()
+
+	fqdn := "vertex-in.pipeline1.default.vertexdomain.local"
+
+	if err := store.Put(ctx, fqdn, "pod-0", "10.0.0.1"); err != nil {
+		t.Fatalf("Put pod-0: %v", err)
+	}
+	if err := store.Put(ctx, fqdn, "pod-1", "10.0.0.2"); err != nil {
+		t.Fatalf("Put pod-1: %v", err)
+	}
+	if err := store.Put(ctx, fqdn, "pod-2", "10.0.0.3"); err != nil {
+		t.Fatalf("Put pod-2: %v", err)
+	}
+
+	// Delete only pod-1.
+	if err := store.Delete(ctx, fqdn, "pod-1"); err != nil {
+		t.Fatalf("Delete pod-1: %v", err)
+	}
+
+	got, err := store.Get(ctx, fqdn)
+	if err != nil {
+		t.Fatalf("Get after single delete: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("Get returned %d IPs, want 2", len(got))
+	}
+
+	slices.Sort(got)
+	want := []string{"10.0.0.1", "10.0.0.3"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
@@ -182,11 +262,11 @@ func TestEtcdStorePutInvalidFQDN(t *testing.T) {
 	store := NewEtcdStoreFromClient(client)
 	ctx := context.Background()
 
-	if err := store.Put(ctx, "", "192.168.140.10"); err == nil {
+	if err := store.Put(ctx, "", "pod-0", "192.168.140.10"); err == nil {
 		t.Fatal("Put with empty FQDN should return error")
 	}
 
-	if err := store.Delete(ctx, ""); err == nil {
+	if err := store.Delete(ctx, "", "pod-0"); err == nil {
 		t.Fatal("Delete with empty FQDN should return error")
 	}
 
