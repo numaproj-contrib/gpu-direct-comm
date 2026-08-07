@@ -1,0 +1,40 @@
+# Full-flow E2E pipeline for local (k3d + dummy interfaces).
+# Validates M1–M6: vertexDomain annotation injection, DNS record CRUD,
+# name resolution from a test Pod, and multi-Pod round-robin.
+# The "out" vertex sets scale.min: 2 so two Pods share the same FQDN,
+# enabling round-robin DNS verification (M6).
+---
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: NumaNetwork
+metadata:
+  name: e2e-full-flow-nn
+  namespace: default
+spec:
+  refDeviceClass:
+    name: dranet-e2e-local
+  refResourceClaimDranet:
+    ipRange: "192.168.141.0/24"
+---
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: e2e-full-flow-pipeline
+  namespace: default
+  annotations:
+    gpu-direct-comm.numaproj.io/numa-network-edges: |
+      [{"from":"in","to":"out","numaNetwork":"e2e-full-flow-nn","connectionType":"direct"}]
+spec:
+  vertices:
+    - name: in
+      source:
+        generator:
+          rpu: 1
+          duration: 1s
+    - name: out
+      scale:
+        min: 2
+      sink:
+        log: {}
+  edges:
+    - from: in
+      to: out
