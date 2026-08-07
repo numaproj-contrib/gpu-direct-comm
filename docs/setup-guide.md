@@ -336,6 +336,15 @@ kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
 # Expected: log output mentioning vertexdomain.local.:53 (no errors)
 ```
 
+Once all checks pass, you can run the full-flow E2E test to verify the entire vertexDomain flow (M1–M6):
+
+```bash
+make test-e2e-full-local
+# or: ./hack/e2e-full-flow.sh --env local
+```
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for details on what the test verifies.
+
 ---
 
 ## 2. Bare-metal Cluster
@@ -722,6 +731,15 @@ kubectl -n kube-system get pods -l app.kubernetes.io/name=webhook-whereabouts-nu
 ### Verify
 
 Run the same checklist as [Local Cluster > Verify](#verify), with one substitution: skip the `kubectl config current-context` check (bare-metal clusters are not created by k3d). The whereabouts config check (`kubectl -n kube-system exec ds/whereabouts -- cat ...`) is identical — no SSH access to the nodes is needed for it.
+
+Once all checks pass, you can run the full-flow E2E test to verify the entire vertexDomain flow (M1–M6):
+
+```bash
+make test-e2e-full-baremetal
+# or: ./hack/e2e-full-flow.sh --env baremetal
+```
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for details on what the test verifies.
 
 ---
 

@@ -320,6 +320,15 @@ kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
 # 期待値: vertexdomain.local.:53 に関するログ出力（エラーなし）
 ```
 
+すべてのチェックが通ったら、統合 E2E テストで vertexDomain の全フロー（M1〜M6）を検証できます:
+
+```bash
+make test-e2e-full-local
+# または: ./hack/e2e-full-flow.sh --env local
+```
+
+詳細は [CONTRIBUTING.ja.md](../CONTRIBUTING.ja.md#統合-e2e-テストm1m6-全検証) を参照してください。
+
 ---
 
 ## 2. ベアメタルクラスタ
@@ -708,6 +717,15 @@ kubectl -n kube-system get pods -l app.kubernetes.io/name=webhook-whereabouts-nu
 ### 確認
 
 [ローカルクラスタ > 確認](#確認) と同じチェックリストを実行しますが、1点だけ置き換えます。`kubectl config current-context` の確認は不要です（ベアメタルクラスタは k3d で作成されないため）。whereabouts の設定ファイル確認（`kubectl -n kube-system exec ds/whereabouts -- cat ...`）はそのままで構いません — ノードへの SSH アクセスは不要です。
+
+すべてのチェックが通ったら、統合 E2E テストで vertexDomain の全フロー（M1〜M6）を検証できます:
+
+```bash
+make test-e2e-full-baremetal
+# または: ./hack/e2e-full-flow.sh --env baremetal
+```
+
+詳細は [CONTRIBUTING.ja.md](../CONTRIBUTING.ja.md#統合-e2e-テストm1m6-全検証-1) を参照してください。
 
 ---
 
