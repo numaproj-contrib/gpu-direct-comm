@@ -18,6 +18,11 @@ limitations under the License.
 // in the CoreDNS etcd backend.
 //
 // The primary implementation, EtcdStore, writes SkyDNS-compatible JSON
-// records to etcd v3. The vertexDomainController uses this package to
-// register and remove DNS entries for Secondary NIC IPs.
+// records to etcd v3. Each record is keyed by (FQDN, podID) using
+// sub-keys under the SkyDNS path (e.g. /skydns/.../vertex-name/<podID>),
+// allowing multiple Pods of the same Vertex to register distinct A records.
+// CoreDNS returns all sub-key records as a round-robin A response.
+//
+// The vertexDomainController uses this package to register and remove
+// DNS entries for Secondary NIC IPs.
 package dns
