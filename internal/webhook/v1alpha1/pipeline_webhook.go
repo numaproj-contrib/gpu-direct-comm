@@ -49,6 +49,14 @@ func (v *PipelineValidator) Handle(ctx context.Context, req admission.Request) a
 		return admission.Errored(http.StatusBadRequest, fmt.Errorf("decode Pipeline: %w", err))
 	}
 
+	// Skip validation for Pipelines that are being deleted.
+	// Finalizer removal is an UPDATE operation; the referenced NumaNetwork
+	// may already be gone at this point, so validating its existence would
+	// block the finalizer and leave the Pipeline stuck in Deleting state.
+	if obj.GetDeletionTimestamp() != nil {
+		return admission.Allowed("pipeline is being deleted")
+	}
+
 	annotations := obj.GetAnnotations()
 	rawBinding, ok := annotations[AnnotationNumaNetworkEdges]
 	if !ok {
