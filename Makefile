@@ -95,6 +95,10 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+.PHONY: verify-setup
+verify-setup: ## Verify that the dev environment is fully operational (auto-detects local/baremetal)
+	./hack/verify-setup.sh
+
 .PHONY: test-e2e-full-local
 test-e2e-full-local: ## Run full-flow E2E tests on local k3d cluster (dummy interfaces)
 	./hack/e2e-full-flow.sh --env local

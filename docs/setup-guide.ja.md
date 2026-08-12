@@ -81,7 +81,31 @@ kubectl get pods -n numaflow-system
 
 ### gpu-direct-comm 固有のセットアップ
 
-#### 3. DRANET のインストール
+#### 3. dummy インターフェースの作成
+
+本番環境では SR-IOV VF（物理 NIC の仮想分割）が GPU 間直接通信用の Secondary NIC として使われます。ローカル k3d クラスタには SR-IOV ハードウェアがないため、Linux の **dummy インターフェース** を実 NIC の代役として使用します。DRANET 自身の upstream E2E テストも同じ手法を採用しています。
+
+k3d は各 Kubernetes ノードを Docker コンテナとして実行します。まずノードコンテナが稼働していることを確認します:
+
+```bash
+docker ps --filter "name=k3d-numaflow-cluster" --format "{{.Names}}"
+# 期待値: k3d-numaflow-cluster-server-0, -agent-0, -agent-1
+```
+
+各ノードコンテナ内に `dummy0` インターフェースを作成し、有効化します:
+
+```bash
+for node in k3d-numaflow-cluster-server-0 k3d-numaflow-cluster-agent-0 k3d-numaflow-cluster-agent-1; do
+  docker exec "$node" sh -c "ip link show dummy0 >/dev/null 2>&1 || (ip link add dummy0 type dummy && ip link set up dev dummy0)"
+done
+```
+
+- `ip link add dummy0 type dummy` — `dummy0` という名前の仮想ネットワークインターフェースを作成します。
+- `ip link set up dev dummy0` — インターフェースを UP（有効）にし、DRANET が検出できるようにします。
+
+次のステップで DRANET をインストールすると、各ノードで `dummy0` が自動検出され、Kubernetes の **ResourceSlice** オブジェクトとしてデバイスが公開されます。
+
+#### 4. DRANET のインストール
 
 DRANET は NIC を `ResourceSlice` オブジェクトとして公開し、Pod にアタッチする DRA（Dynamic Resource Allocation）driver です。
 
@@ -106,7 +130,7 @@ options:
         nodeFilters: ["server:*", "agent:*"]
 ```
 
-#### 4. DeviceClass の作成
+#### 5. DeviceClass の作成
 
 `DeviceClass` は、DRANET が公開したどのデバイスが割当対象かを Kubernetes に伝えます。`NumaNetwork.spec.refDeviceClass.name` はこのオブジェクトを参照する必要があります。ローカルクラスタでは `dummy` タイプのインターフェースのみにフィルタする DeviceClass を使用します:
 
@@ -121,7 +145,7 @@ kubectl get deviceclass dranet-e2e-local
 # 期待値: AGE 付きで DeviceClass が表示される
 ```
 
-#### 5. whereabouts のインストール
+#### 6. whereabouts のインストール
 
 whereabouts は、`webhook-whereabouts-numanetwork` が `NumaNetwork.spec.refResourceClaimDranet.ipRange` から IP を割り当てるために exec する CNI IPAM プラグインです。その DaemonSet はノードごとに flat な設定ファイル（`/etc/cni/net.d/whereabouts.d/whereabouts.conf`。IPPool CRD と通信するための kubeconfig を含む）も生成し、`webhook-whereabouts-numanetwork` はこれに依存します — webhook をデプロイする前にインストールしてください。
 
@@ -137,7 +161,7 @@ kubectl -n kube-system exec ds/whereabouts -- cat /host/etc/cni/net.d/whereabout
 # 期待値: "kubeconfig" フィールドを含む JSON
 ```
 
-#### 6. cert-manager のインストール
+#### 7. cert-manager のインストール
 
 gpu-direct-comm の controller manager の webhook（`internal/webhook/v1alpha1`）は cert-manager が管理する TLS 証明書を必要とします（`config/default/kustomization.yaml` は `../certmanager` を含む）。
 
@@ -153,11 +177,11 @@ kubectl get pods -n cert-manager
 # 期待値: cert-manager, cert-manager-cainjector, cert-manager-webhook — すべて Running
 ```
 
-#### 7. gpu-direct-comm のインストール
+#### 8. gpu-direct-comm のインストール
 
 以下の 3 つのサブステップは、本リポジトリのソースコードからビルドしたコンポーネントをインストールします。
 
-##### 7-1. gpu-direct-comm CRD のインストール
+##### 8-1. gpu-direct-comm CRD のインストール
 
 ```bash
 make install
@@ -172,7 +196,7 @@ kubectl get crd numanetworks.numaflow.numaproj.io
 # 期待値: CREATED AT タイムスタンプ付きで CRD が表示される
 ```
 
-##### 7-2. gpu-direct-comm controller manager のデプロイ
+##### 8-2. gpu-direct-comm controller manager のデプロイ
 
 ```bash
 make docker-build IMG=controller:latest
@@ -188,7 +212,7 @@ kubectl get pods -n gpu-direct-comm-system
 # 期待値: gpu-direct-comm-controller-manager-... — Running, READY 1/1
 ```
 
-##### 7-3. webhook-whereabouts-numanetwork のビルドとデプロイ
+##### 8-3. webhook-whereabouts-numanetwork のビルドとデプロイ
 
 `webhook-whereabouts-numanetwork` は本リポジトリに実装された dranet BYODP（Bring Your Own DRANET Provider）用のカスタム webhook です（`cmd/webhook-whereabouts-numanetwork`、`internal/ipam`）。`NumaNetwork` の `ipRange` を解決し、`whereabouts` を exec して IP を割り当てます。
 
@@ -207,7 +231,36 @@ kubectl -n kube-system get pods -l app=webhook-whereabouts-numanetwork
 # 期待値: ノードごとに 1 Pod — すべて Running, READY 1/1
 ```
 
-##### 7-4. CoreDNS etcd バックエンドのセットアップ
+##### 8-4. DRANET の BYODP webhook 連携設定
+
+このステップでは DRANET が IPAM を `webhook-whereabouts-numanetwork`（本プロジェクトで構築した webhook）に委譲するよう設定します。パッチは 3 種類の変更を行います:
+
+- **Webhook 引数（常に必要）**: `--profile-provider=webhook` と `--webhook-url` は、NIC 割り当て時に DRANET が webhook を呼び出して IP を割り当てるための設定です。gpu-direct-comm を使用するすべての環境で恒久的に必要です。
+- **dnsPolicy（常に必要）**: DRANET は `hostNetwork: true` で動作するため、デフォルトの `dnsPolicy: Default` ではホストの DNS リゾルバが使われ、クラスタ内 Service の `.svc` 名を解決できません。`ClusterFirstWithHostNet` でクラスタ DNS を使用させます。
+- **イメージ差し替え（一時的）**: この記述時点で、公式の `registry.k8s.io/networking/dranet:stable` タグは `v1.3.0`（2026-05-28 リリース）からビルドされており、BYODP webhook 機能（[dranet PR #223](https://github.com/kubernetes-sigs/dranet/pull/223) で 2026-06-10 にマージ）より前のものです。公式リリースに含まれるまでは CI ビルドイメージを使用します:
+
+```bash
+docker pull gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5
+k3d image import gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5 -c numaflow-cluster
+```
+
+> 将来この固定タグを再利用する前に、公式リリースに BYODP が含まれたか確認してください: `crane ls registry.k8s.io/networking/dranet` を実行し、[dranet リリースページ](https://github.com/kubernetes-sigs/dranet/releases)で PR #223 以降のバージョンを確認してください。存在する場合は、上記の `docker pull`/`k3d image import` をスキップし、公式の `stable` タグを使用してください。
+
+パッチを適用します:
+
+```bash
+kubectl -n kube-system patch ds dranet --type=json -p='[
+  {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5"},
+  {"op":"replace","path":"/spec/template/spec/dnsPolicy","value":"ClusterFirstWithHostNet"},
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--profile-provider=webhook"},
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--webhook-url=http://webhook-whereabouts-numanetwork.kube-system.svc:8443"}
+]'
+kubectl -n kube-system rollout status ds/dranet --timeout=90s
+```
+
+> dranet は `--webhook-url` の `/health` エンドポイントに起動時に到達できない場合、即座にクラッシュします（`Fatal`）。このため、このステップの*前に* `webhook-whereabouts-numanetwork` がデプロイ済みで `READY` でなければなりません — dranet を先に webhook モードに切り替え、その後に webhook をデプロイすると、crash-loop になります。
+
+##### 8-5. CoreDNS etcd バックエンドのセットアップ
 
 CoreDNS の [etcd プラグイン](https://coredns.io/plugins/etcd/) を使用して、`vertexdomain.local` ゾーンの名前解決を提供します。このステップでは以下の 2 つをデプロイします：
 
@@ -230,43 +283,23 @@ kubectl -n kube-system rollout restart deployment/coredns
 kubectl -n kube-system rollout status deployment/coredns --timeout=60s
 ```
 
-etcd が正常であること、CoreDNS が `vertexdomain.local` ゾーンをロードしていることを確認します：
+etcd が正常であること、CoreDNS が `vertexdomain.local` ゾーンを認識していることを確認します：
 
 ```bash
+# etcd の正常性を確認
 kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
 # 期待値: 127.0.0.1:2379 is healthy: successfully committed proposal: took = ...
 
-kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
-# 期待値: vertexdomain.local.:53 に関するログ出力（エラーなし）
-```
-
-動作確認として、etcd にテスト用 A レコードを登録し、名前解決できることを検証します：
-
-```bash
-# テスト用 A レコードを etcd に登録
-kubectl -n kube-system exec etcd-coredns-0 -- etcdctl put \
-  /skydns/local/vertexdomain/default/pipeline1/vertex-in \
-  '{"host":"192.168.140.10"}'
-
-# テスト用 Pod を起動し、CoreDNS 経由で名前解決
-kubectl run dns-test --restart=Never --image=busybox:1.37 -- sleep 3600
-kubectl wait --for=condition=Ready pod/dns-test --timeout=30s
-kubectl exec dns-test -- nslookup vertex-in.pipeline1.default.vertexdomain.local
-# 期待値:
-#   Server:    10.43.0.10
-#   Address:   10.43.0.10:53
-#   Name:      vertex-in.pipeline1.default.vertexdomain.local
-#   Address:   192.168.140.10
-
-# テスト用レコードを削除し、NXDOMAIN を確認
-kubectl -n kube-system exec etcd-coredns-0 -- etcdctl del \
-  /skydns/local/vertexdomain/default/pipeline1/vertex-in
-kubectl exec dns-test -- nslookup vertex-in.pipeline1.default.vertexdomain.local
+# 存在しないホスト名を引いて、ゾーンが認識されているか確認
+# NXDOMAIN = ゾーンは認識されている（レコードが無いだけ）
+# SERVFAIL = ゾーンが設定されていない
+kubectl run dns-check --rm -i --restart=Never \
+  --image=busybox:1.37 -- nslookup dummy.vertexdomain.local
 # 期待値: ** server can't find ... NXDOMAIN
-
-# テスト用 Pod をクリーンアップ
-kubectl delete pod dns-test
+kubectl delete pod dns-check --ignore-not-found
 ```
+
+> etcd → CoreDNS → Pod のデータパス全体の疎通確認（A レコード登録・名前解決・削除）は E2E テスト（`make test-e2e-full-local`）でカバーしています。
 
 > これは `emptyDir` ストレージを使用する単一インスタンスの etcd です — Pod 再起動時にデータは失われます。開発段階ではこれで問題ありません：vertexDomainManager は Pod の状態を reconcile し、起動時に DNS レコードを再作成します。本番環境向けの HA 構成は MVP のスコープ外です。
 
@@ -274,7 +307,14 @@ kubectl delete pod dns-test
 
 ### 確認
 
-全チェックを一括実行して、環境が完全に動作していることを確認します。
+全チェックを一括実行して、環境が完全に動作していることを確認します:
+
+```bash
+make verify-setup
+# または: ./hack/verify-setup.sh
+```
+
+個別に確認したい場合は、以下のコマンドを手動で実行してください:
 
 ```bash
 # k3d クラスタ context
@@ -313,21 +353,27 @@ kubectl get pods -n gpu-direct-comm-system
 kubectl -n kube-system get ds whereabouts dranet webhook-whereabouts-numanetwork
 # 期待値: 全 DaemonSet が全ノードで READY
 
+# DRANET BYODP webhook 連携（--profile-provider=webhook が設定されていること）
+kubectl -n kube-system get ds dranet -o jsonpath='{.spec.template.spec.containers[0].args}'
+# 期待値: --profile-provider=webhook と --webhook-url=... を含む
+
 # CoreDNS etcd バックエンド
 kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
 # 期待値: 127.0.0.1:2379 is healthy
-kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
-# 期待値: vertexdomain.local.:53 に関するログ出力（エラーなし）
+kubectl run dns-check --rm -i --restart=Never \
+  --image=busybox:1.37 -- nslookup dummy.vertexdomain.local
+# 期待値: NXDOMAIN（ゾーンは認識されている）
+kubectl delete pod dns-check --ignore-not-found
 ```
 
-すべてのチェックが通ったら、統合 E2E テストで vertexDomain の全フロー（M1〜M6）を検証できます:
+すべてのチェックが通ったら、統合 E2E テストの実施が可能です:
 
 ```bash
 make test-e2e-full-local
 # または: ./hack/e2e-full-flow.sh --env local
 ```
 
-詳細は [CONTRIBUTING.ja.md](../CONTRIBUTING.ja.md#統合-e2e-テストm1m6-全検証) を参照してください。
+詳細は [CONTRIBUTING.ja.md](../CONTRIBUTING.ja.md#ローカルクラスタ) を参照してください。
 
 ---
 
@@ -714,9 +760,35 @@ kubectl -n kube-system get pods -l app.kubernetes.io/name=webhook-whereabouts-nu
 # 期待値: DaemonSet がスケジュール可能な各ノードに1つずつ Pod — すべて Running, READY 1/1
 ```
 
+##### 6-5. DRANET の BYODP webhook 連携設定
+
+[ローカルクラスタ > 8-4. DRANET の BYODP webhook 連携設定](#8-4-dranet-の-byodp-webhook-連携設定) と同じですが、1点異なります: ベアメタルノードは `k3d image import` ではなくレジストリからイメージを pull します。固定された DRANET イメージがノードからアクセス可能なレジストリに存在することを確認してください:
+
+```bash
+# ノードが gcr.io から直接 pull できる場合:
+kubectl -n kube-system patch ds dranet --type=json -p='[
+  {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5"},
+  {"op":"replace","path":"/spec/template/spec/dnsPolicy","value":"ClusterFirstWithHostNet"},
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--profile-provider=webhook"},
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--webhook-url=http://webhook-whereabouts-numanetwork.kube-system.svc:8443"}
+]'
+kubectl -n kube-system rollout status ds/dranet --timeout=90s
+```
+
+ノードが `gcr.io` に到達できない場合は、まずイメージをプライベートレジストリにミラーリングし（`docker pull` + `docker tag` + `docker push`）、上記のパッチでミラーリングしたイメージリファレンスを使用してください。
+
+> ローカルクラスタと同様に、この固定タグを再利用する前に、公式 DRANET リリースに BYODP が含まれたか確認してください — 根拠と確認方法は[ローカルクラスタ > 8-4](#8-4-dranet-の-byodp-webhook-連携設定) を参照してください。
+
 ### 確認
 
-[ローカルクラスタ > 確認](#確認) と同じチェックリストを実行しますが、1点だけ置き換えます。`kubectl config current-context` の確認は不要です（ベアメタルクラスタは k3d で作成されないため）。whereabouts の設定ファイル確認（`kubectl -n kube-system exec ds/whereabouts -- cat ...`）はそのままで構いません — ノードへの SSH アクセスは不要です。
+[ローカルクラスタ > 確認](#確認) と同じスクリプトを実行します。環境は自動判定されます:
+
+```bash
+make verify-setup
+# または: ./hack/verify-setup.sh
+```
+
+ベアメタルでは `kubectl config current-context` のチェックが自動的にスキップされます。
 
 すべてのチェックが通ったら、統合 E2E テストで vertexDomain の全フロー（M1〜M6）を検証できます:
 
@@ -725,7 +797,7 @@ make test-e2e-full-baremetal
 # または: ./hack/e2e-full-flow.sh --env baremetal
 ```
 
-詳細は [CONTRIBUTING.ja.md](../CONTRIBUTING.ja.md#統合-e2e-テストm1m6-全検証-1) を参照してください。
+詳細は [CONTRIBUTING.ja.md](../CONTRIBUTING.ja.md#ベアメタルクラスタ) を参照してください。
 
 ---
 
