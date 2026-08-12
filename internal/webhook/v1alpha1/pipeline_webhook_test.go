@@ -106,6 +106,41 @@ func makeRequest(ns string, raw []byte) admission.Request {
 // validEdgeList is a convenience for tests.
 var validEdgeList = []map[string]string{{"from": "filter-resize", "to": "inference"}}
 
+// deletingPipelineJSON builds a Pipeline JSON with a non-nil deletionTimestamp,
+// simulating a Pipeline that is being deleted (finalizer removal triggers an UPDATE).
+func deletingPipelineJSON(t *testing.T, ns string, annotations map[string]string, edges []map[string]string) []byte {
+	t.Helper()
+	now := metav1.Now()
+	obj := map[string]any{
+		"apiVersion": "numaflow.numaproj.io/v1alpha1",
+		"kind":       "Pipeline",
+		"metadata": map[string]any{
+			"name":              "test-pipeline",
+			"namespace":         ns,
+			"annotations":       annotations,
+			"deletionTimestamp": now.UTC().Format("2006-01-02T15:04:05Z"),
+			"finalizers":        []string{"numaflow.numaproj.io/pipeline-controller"},
+		},
+		"spec": map[string]any{
+			"edges": func() []any {
+				result := make([]any, 0, len(edges))
+				for _, e := range edges {
+					result = append(result, map[string]any{
+						"from": e["from"],
+						"to":   e["to"],
+					})
+				}
+				return result
+			}(),
+		},
+	}
+	raw, err := json.Marshal(obj)
+	if err != nil {
+		t.Fatalf("marshal Pipeline: %v", err)
+	}
+	return raw
+}
+
 func TestPipelineValidator_Handle(t *testing.T) {
 	const ns = "default"
 	const nnName = "pipeline1-multi-network"
@@ -209,5 +244,28 @@ func TestPipelineValidator_Handle(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPipelineValidator_Handle_DeletingPipelineSkipsValidation(t *testing.T) {
+	// Arrange — NumaNetwork does NOT exist, Pipeline is being deleted.
+	// Without the deletionTimestamp guard, this would be Denied with "not found".
+	const ns = "default"
+	s := buildWebhookScheme(t)
+	fakeClient := fake.NewClientBuilder().WithScheme(s).Build()
+	validator := &PipelineValidator{Client: fakeClient, Scheme: s}
+
+	annotations := map[string]string{
+		AnnotationNumaNetworkEdges: `[{"from":"filter-resize","to":"inference","numaNetwork":"already-gone","connectionType":"direct"}]`,
+	}
+	raw := deletingPipelineJSON(t, ns, annotations, validEdgeList)
+	req := makeRequest(ns, raw)
+
+	// Act
+	resp := validator.Handle(context.Background(), req)
+
+	// Assert
+	if !resp.Allowed {
+		t.Errorf("expected Allowed for deleting Pipeline, got Denied: %s", resp.Result.Message)
 	}
 }
