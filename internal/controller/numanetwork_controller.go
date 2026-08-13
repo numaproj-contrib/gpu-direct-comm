@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -34,6 +35,18 @@ import (
 	numaflowv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/api/v1alpha1"
 )
 
+const (
+	numaNetworkFinalizer = "gpu-direct-comm.numaproj.io/numa-network-ip"
+
+	// LabelNumaNetworkName is set on ResourceClaimTemplateSpec.ObjectMeta so
+	// that ResourceClaims created from the template inherit it. The finalizer
+	// uses this label to find ResourceClaims that must be released before
+	// the NumaNetwork can be safely deleted.
+	LabelNumaNetworkName = "gpu-direct-comm.numaproj.io/numanetwork-name"
+
+	finalizerRequeueDelay = 5 * time.Second
+)
+
 // NumaNetworkReconciler reconciles a NumaNetwork object.
 type NumaNetworkReconciler struct {
 	client.Client
@@ -44,6 +57,7 @@ type NumaNetworkReconciler struct {
 // +kubebuilder:rbac:groups=numaflow.numaproj.io,resources=numanetworks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=numaflow.numaproj.io,resources=numanetworks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaimtemplates,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaims,verbs=list;watch
 
 func (r *NumaNetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -56,12 +70,57 @@ func (r *NumaNetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, fmt.Errorf("get NumaNetwork: %w", err)
 	}
 
+	// Handle deletion: wait for all ResourceClaims derived from this
+	// NumaNetwork's RCT to be released before allowing deletion.
+	// This prevents IP leaks in whereabouts when NumaNetwork and Pipeline
+	// are deleted simultaneously.
+	if !nn.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(nn, numaNetworkFinalizer) {
+			remaining, err := r.countRelatedResourceClaims(ctx, nn)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if remaining > 0 {
+				log.Info("waiting for ResourceClaims to be released", "remaining", remaining)
+				return ctrl.Result{RequeueAfter: finalizerRequeueDelay}, nil
+			}
+
+			controllerutil.RemoveFinalizer(nn, numaNetworkFinalizer)
+			if err := r.Update(ctx, nn); err != nil {
+				return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
+			}
+			log.Info("finalizer removed, NumaNetwork can be deleted")
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Ensure finalizer is present.
+	if !controllerutil.ContainsFinalizer(nn, numaNetworkFinalizer) {
+		controllerutil.AddFinalizer(nn, numaNetworkFinalizer)
+		if err := r.Update(ctx, nn); err != nil {
+			return ctrl.Result{}, fmt.Errorf("add finalizer: %w", err)
+		}
+	}
+
 	if err := r.reconcileRCT(ctx, nn); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	log.Info("reconciled", "name", nn.Name)
 	return ctrl.Result{}, nil
+}
+
+// countRelatedResourceClaims returns the number of ResourceClaims in the same
+// namespace that carry the numanetwork-name label matching nn.Name.
+func (r *NumaNetworkReconciler) countRelatedResourceClaims(ctx context.Context, nn *numaflowv1alpha1.NumaNetwork) (int, error) {
+	var claims resourcev1.ResourceClaimList
+	if err := r.List(ctx, &claims,
+		client.InNamespace(nn.Namespace),
+		client.MatchingLabels{LabelNumaNetworkName: nn.Name},
+	); err != nil {
+		return 0, fmt.Errorf("list ResourceClaims: %w", err)
+	}
+	return len(claims.Items), nil
 }
 
 // reconcileRCT creates or updates the ResourceClaimTemplate owned by nn,
@@ -137,6 +196,11 @@ func BuildResourceClaimTemplate(nn *numaflowv1alpha1.NumaNetwork) *resourcev1.Re
 			Namespace: nn.Namespace,
 		},
 		Spec: resourcev1.ResourceClaimTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					LabelNumaNetworkName: nn.Name,
+				},
+			},
 			Spec: resourcev1.ResourceClaimSpec{
 				Devices: resourcev1.DeviceClaim{
 					Requests: []resourcev1.DeviceRequest{
