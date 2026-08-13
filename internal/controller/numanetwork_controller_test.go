@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -85,6 +86,23 @@ func assertNoIPRangeInParams(t *testing.T, params map[string]string) {
 }
 
 // ─── TestBuildResourceClaimTemplate ───────────────────────────────────────────
+
+func TestBuildResourceClaimTemplate_NumaNetworkLabel(t *testing.T) {
+	// Arrange
+	nn := newNN("default")
+
+	// Act
+	rct := BuildResourceClaimTemplate(nn)
+
+	// Assert: Spec.ObjectMeta.Labels carries the numanetwork-name label
+	got, ok := rct.Spec.Labels[LabelNumaNetworkName]
+	if !ok {
+		t.Fatalf("label %q not found in RCT Spec.ObjectMeta.Labels", LabelNumaNetworkName)
+	}
+	if got != nn.Name {
+		t.Errorf("label %q = %q, want %q", LabelNumaNetworkName, got, nn.Name)
+	}
+}
 
 func TestBuildResourceClaimTemplate(t *testing.T) {
 	nn := newNN("default")
@@ -356,5 +374,154 @@ func TestReconcile_RCTSpecUpdatedOnChange(t *testing.T) {
 	owner := rct.OwnerReferences[0]
 	if owner.Kind != "NumaNetwork" || owner.Name != "test-nn" {
 		t.Errorf("owner = {Kind:%q Name:%q}, want {Kind:NumaNetwork Name:test-nn}", owner.Kind, owner.Name)
+	}
+}
+
+// ─── Finalizer tests ────────────────────────────────────────────────────────
+
+func TestReconcile_FinalizerAdded(t *testing.T) {
+	// Arrange
+	s := buildScheme(t)
+	nn := newNN("test-ns")
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn).WithStatusSubresource(nn).Build()
+	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
+
+	// Act
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile error: %v", err)
+	}
+
+	// Assert: finalizer is present
+	updated := &numaflowv1alpha1.NumaNetwork{}
+	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}, updated); err != nil {
+		t.Fatalf("NumaNetwork not found: %v", err)
+	}
+	if !slices.Contains(updated.Finalizers, numaNetworkFinalizer) {
+		t.Errorf("finalizer %q not found in %v", numaNetworkFinalizer, updated.Finalizers)
+	}
+}
+
+func TestReconcile_DeletionBlockedWhileResourceClaimsExist(t *testing.T) {
+	// Arrange: NumaNetwork being deleted + a ResourceClaim with the matching label
+	s := buildScheme(t)
+	now := metav1.Now()
+	nn := newNN("test-ns")
+	nn.DeletionTimestamp = &now
+	nn.Finalizers = []string{numaNetworkFinalizer}
+
+	rc := &resourcev1.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "some-pod-test-nn-rct-abc12",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				LabelNumaNetworkName: "test-nn",
+			},
+		},
+		Spec: resourcev1.ResourceClaimSpec{},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn, rc).WithStatusSubresource(nn).Build()
+	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
+
+	// Act
+	result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile error: %v", err)
+	}
+
+	// Assert: requeue requested (deletion blocked)
+	if result.RequeueAfter != finalizerRequeueDelay {
+		t.Errorf("RequeueAfter = %v, want %v", result.RequeueAfter, finalizerRequeueDelay)
+	}
+
+	// Assert: finalizer is still present
+	updated := &numaflowv1alpha1.NumaNetwork{}
+	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}, updated); err != nil {
+		t.Fatalf("NumaNetwork not found: %v", err)
+	}
+	if !slices.Contains(updated.Finalizers, numaNetworkFinalizer) {
+		t.Error("finalizer should still be present while ResourceClaims exist")
+	}
+}
+
+func TestReconcile_FinalizerRemovedWhenNoResourceClaims(t *testing.T) {
+	// Arrange: NumaNetwork being deleted, no ResourceClaims
+	s := buildScheme(t)
+	now := metav1.Now()
+	nn := newNN("test-ns")
+	nn.DeletionTimestamp = &now
+	nn.Finalizers = []string{numaNetworkFinalizer}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn).WithStatusSubresource(nn).Build()
+	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
+
+	// Act
+	result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile error: %v", err)
+	}
+
+	// Assert: no requeue
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0 (no requeue)", result.RequeueAfter)
+	}
+
+	// Assert: finalizer removed → fake client deletes the object (DeletionTimestamp was set)
+	updated := &numaflowv1alpha1.NumaNetwork{}
+	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}, updated)
+	if err == nil {
+		// Object still exists — check that finalizer was at least removed
+		for _, f := range updated.Finalizers {
+			if f == numaNetworkFinalizer {
+				t.Error("finalizer should have been removed when no ResourceClaims exist")
+			}
+		}
+	}
+	// NotFound is also acceptable: fake client GCs the object once finalizers are empty
+}
+
+func TestReconcile_UnrelatedResourceClaimDoesNotBlockDeletion(t *testing.T) {
+	// Arrange: NumaNetwork being deleted + a ResourceClaim with a DIFFERENT label
+	s := buildScheme(t)
+	now := metav1.Now()
+	nn := newNN("test-ns")
+	nn.DeletionTimestamp = &now
+	nn.Finalizers = []string{numaNetworkFinalizer}
+
+	unrelatedRC := &resourcev1.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "unrelated-claim",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				LabelNumaNetworkName: "other-nn",
+			},
+		},
+		Spec: resourcev1.ResourceClaimSpec{},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn, unrelatedRC).WithStatusSubresource(nn).Build()
+	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
+
+	// Act
+	result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile error: %v", err)
+	}
+
+	// Assert: no requeue — unrelated claims do not block
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0", result.RequeueAfter)
+	}
+
+	// Assert: finalizer removed → object may be GC'd by fake client
+	updated := &numaflowv1alpha1.NumaNetwork{}
+	err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}, updated)
+	if err == nil {
+		for _, f := range updated.Finalizers {
+			if f == numaNetworkFinalizer {
+				t.Error("finalizer should have been removed — unrelated ResourceClaim must not block")
+			}
+		}
 	}
 }
