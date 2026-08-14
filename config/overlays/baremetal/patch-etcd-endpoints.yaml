@@ -1,0 +1,25 @@
+# Patch the controller-manager --etcd-endpoints for bare-metal (kubeadm)
+# environments.
+#
+# The base manifest uses 10.43.200.53 (k3s default Service CIDR 10.43.0.0/16).
+# kubeadm clusters use 10.96.0.0/12, so the etcd-coredns Service is at
+# 10.96.200.53.
+#
+# NOTE: This strategic merge patch replaces the entire args list.
+# When adding new args to config/manager/manager.yaml, update this patch too.
+#
+# To find your Service CIDR:
+#   kubectl cluster-info dump | grep -m 1 service-cluster-ip-range
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          args:
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+            - --etcd-endpoints=http://10.96.200.53:2379

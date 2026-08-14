@@ -1,5 +1,7 @@
 # Contributing to gpu-direct-comm
 
+> This is the English translation of [CONTRIBUTING.ja.md](./CONTRIBUTING.ja.md). In case of discrepancies, the Japanese version is authoritative.
+
 Thank you for your interest in contributing to gpu-direct-comm. This document explains how to get started and what to expect from the contribution process.
 
 ## Table of Contents
@@ -52,6 +54,8 @@ When modifying or adding a package, update the corresponding `doc.go` file to ke
 | `make build` | Build the manager binary |
 | `make test` | Run unit tests with envtest |
 | `make test-e2e` | Run e2e tests with k3d |
+| `make test-e2e-full-local` | Run full-flow E2E tests on local k3d cluster (M1–M6) |
+| `make test-e2e-full-baremetal` | Run full-flow E2E tests on baremetal cluster (SR-IOV VFs) |
 | `make lint` | Run golangci-lint |
 | `make lint-fix` | Run golangci-lint and apply automatic fixes |
 | `make manifests` | Regenerate CRD, RBAC, and webhook YAML |
@@ -101,114 +105,43 @@ make lint
 
 ### Local Cluster
 
-E2E tests validate `NumaNetwork.spec.refResourceClaimDranet.ipRange` end to end: a `dummy0` interface is created on every k3d node, DRANET publishes it as an allocatable device, and `webhook-whereabouts-numanetwork` assigns it an IP from `ipRange` via `whereabouts` when a Numaflow Pipeline with `connectionType: direct` edges is deployed. The Mutating Webhook injects the ResourceClaimTemplate into both vertices of the edge, so both vertex Pods receive a secondary NIC. Real SR-IOV VF hardware is not required — `dummy0` stands in for a real Secondary NIC (dranet's own upstream E2E tests use the same technique).
+E2E tests validate the following two goals end to end:
 
-**Prerequisite**: Complete the [Local Cluster](docs/setup-guide.md#1-local-cluster) environment setup first — all components (`whereabouts`, DRANET, `dranet` DeviceClass, controller manager, `webhook-whereabouts-numanetwork`, ISBSvc) must be deployed and `READY`. Unit tests (`make test`) must pass before running E2E tests.
+- **Goal 1 (IP assignment)**: A `dummy0` interface is created on every k3d node. DRANET publishes it as an allocatable device. When a Numaflow Pipeline with a `connectionType: direct` edge is deployed, `webhook-whereabouts-numanetwork` assigns an IP from `ipRange` via `whereabouts`. The Mutating Webhook injects the ResourceClaimTemplate into both vertices of the edge, so both vertex Pods receive a Secondary NIC. Real SR-IOV VF hardware is not required — `dummy0` stands in for a real Secondary NIC (dranet's own upstream E2E tests use the same technique).
+- **Goal 2 (DNS resolution)**: vertexDomainMutator injects a FQDN annotation on Pods. vertexDomainController registers DNS records in CoreDNS etcd. The test verifies that destination Pod IPs can be resolved via DNS from within the pipeline.
 
-To run all steps at once, use the helper script:
+**Prerequisite**: Complete the [Local Cluster](docs/setup-guide.md#1-local-cluster) environment setup first — all components (`whereabouts`, DRANET, `dranet` DeviceClass, controller manager, `webhook-whereabouts-numanetwork`, CoreDNS etcd backend) must be deployed and `READY`. Make sure unit tests (`make test`) pass before running E2E tests.
+
+To run all steps at once:
 
 ```bash
-./hack/e2e-webhook-whereabouts.sh
+# Goal 1 + Goal 2 full flow
+make test-e2e-full-local
+# Or: ./hack/e2e-full-flow.sh --env local
+
+# Goal 1 (IP assignment) only
+# ./hack/e2e-webhook-whereabouts.sh
 ```
 
-The individual steps below explain what the script does.
+The individual steps below explain what the script does. Environment setup (dummy interface creation, DeviceClass, BYODP webhook configuration, etc.) is assumed to be complete — all checks in [setup-guide.md](docs/setup-guide.md#1-local-cluster) must pass.
 
-#### 1. Create a dummy interface on every node
+#### 1. Deploy the Pipeline (NumaNetwork + ISBSvc + Pipeline)
 
-In production, SR-IOV VFs on physical NICs serve as the Secondary NIC for GPU-direct communication. In a local k3d cluster there is no SR-IOV hardware, so a Linux **dummy interface** stands in for a real NIC. DRANET's own upstream E2E tests use the same technique.
-
-k3d runs each Kubernetes node as a Docker container. Verify the node containers are running:
+`e2e_full_flow_local.yaml` bundles a NumaNetwork and a Pipeline with a `connectionType: direct` edge. NumaNetworkReconciler creates a RCT (`<numaNetworkName>-rct`), and the Pipeline Mutating Webhook injects the RCT into vertices participating in direct binding:
 
 ```bash
-docker ps --filter "name=k3d-numaflow-cluster" --format "{{.Names}}"
-# Expected: k3d-numaflow-cluster-server-0, -agent-0, -agent-1
+kubectl apply -f config/testdata/e2e_full_flow_local.yaml
+kubectl get resourceclaimtemplate e2e-full-flow-nn-rct   # created by the controller
+kubectl wait --for=condition=Ready pod -l numaflow.numaproj.io/pipeline-name=e2e-full-flow-pipeline,app.kubernetes.io/component=vertex --timeout=120s
 ```
 
-Create a `dummy0` interface inside each node container and bring it up:
+#### 2. Verify IP assignment from ipRange
+
+The DRA ResourceClaim `status.devices[].networkData` contains the network information written by the DRANET driver after device allocation. This approach works even when the container image does not include network tools (`ip`, `ls`, etc.):
 
 ```bash
-for node in k3d-numaflow-cluster-server-0 k3d-numaflow-cluster-agent-0 k3d-numaflow-cluster-agent-1; do
-  docker exec "$node" sh -c "ip link show dummy0 >/dev/null 2>&1 || (ip link add dummy0 type dummy && ip link set up dev dummy0)"
-done
-```
-
-- `ip link add dummy0 type dummy` creates a virtual network interface named `dummy0`.
-- `ip link set up dev dummy0` enables the interface so DRANET can detect it.
-
-DRANET (running as a DaemonSet on every node) automatically discovers network interfaces and publishes them as devices in a Kubernetes **ResourceSlice** object. Without this step, there is no allocatable device for DRA ResourceClaims, and E2E Pods stay `Pending`.
-
-Confirm DRANET detected `dummy0` on every node. `dra.net/ifName` is the Linux interface name that `ip link add` created, so filtering on it confirms the exact interface is visible to DRA:
-
-```bash
-kubectl get resourceslice -o json | jq -r '
-  .items[]
-  | select(.spec.driver == "dra.net")
-  | .spec.nodeName as $node
-  | .spec.devices[]
-  | select(.attributes["dra.net/ifName"].string == "dummy0")
-  | "\($node): ifName=\(.attributes["dra.net/ifName"].string), type=\(.attributes["dra.net/type"].string)"
-'
-# Expected: one line per node showing ifName=dummy0, type=dummy
-```
-
-If a node is missing from the output, DRANET has not yet detected the interface. Wait a few seconds and re-run the command — DRANET rescans periodically.
-
-#### 2. Verify the DeviceClass is deployed
-
-Confirm that the dummy-specific DeviceClass from the setup guide is present:
-
-```bash
-kubectl get deviceclass dranet-e2e-local
-# Expected: the DeviceClass with AGE
-```
-
-#### 3. Configure DRANET for BYODP webhook integration
-
-This step configures DRANET to delegate IPAM to `webhook-whereabouts-numanetwork` (the webhook built in this project). The patch makes three kinds of changes:
-
-- **Webhook args (always required)**: `--profile-provider=webhook` and `--webhook-url` tell DRANET to call the webhook for IP assignment on every NIC allocation. These are permanent settings for any environment using gpu-direct-comm.
-- **dnsPolicy (always required)**: DRANET runs with `hostNetwork: true`, so the default `dnsPolicy: Default` resolves DNS via the host's resolver, which cannot resolve cluster-internal `.svc` names. `ClusterFirstWithHostNet` fixes this.
-- **Image swap (temporary)**: as of this writing, the official `registry.k8s.io/networking/dranet:stable` tag is built from `v1.3.0` (released 2026-05-28), which predates the BYODP webhook feature (merged in [dranet PR #223](https://github.com/kubernetes-sigs/dranet/pull/223) on 2026-06-10). Until an official release includes it, use the CI-built image:
-
-```bash
-docker pull gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5
-k3d image import gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5 -c numaflow-cluster
-```
-
-> Before reusing this pinned tag on a future date, check whether an official release now includes BYODP: `crane ls registry.k8s.io/networking/dranet` and check the [dranet releases page](https://github.com/kubernetes-sigs/dranet/releases) for a version after PR #223. If one exists, use the official `stable` tag instead and skip the `docker pull`/`k3d image import` above.
-
-Apply the patch:
-
-```bash
-kubectl -n kube-system patch ds dranet --type=json -p='[
-  {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5"},
-  {"op":"replace","path":"/spec/template/spec/dnsPolicy","value":"ClusterFirstWithHostNet"},
-  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--profile-provider=webhook"},
-  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--webhook-url=http://webhook-whereabouts-numanetwork.kube-system.svc:8443"}
-]'
-kubectl -n kube-system rollout status ds/dranet --timeout=90s
-```
-
-> dranet fails fast (`Fatal`, immediate crash) if it cannot reach `--webhook-url`'s `/health` endpoint at startup. This is why `webhook-whereabouts-numanetwork` must already be deployed and `READY` *before* this step — switching dranet to webhook mode first, then deploying the webhook, will crash-loop.
-
-#### 4. Deploy the Pipeline (NumaNetwork + Pipeline)
-
-`e2e_ip_assign_local.yaml` bundles a NumaNetwork and a Pipeline with a `connectionType: direct` edge. The Mutating Webhook injects `e2e-numanetwork-rct` into both the `in` (source) and `out` (sink) vertices:
-
-```bash
-kubectl apply -f config/testdata/e2e_ip_assign_local.yaml
-kubectl get resourceclaimtemplate e2e-numanetwork-rct   # created by the controller
-kubectl wait --for=condition=Ready pod -l numaflow.numaproj.io/pipeline-name=e2e-gpu-direct-pipeline --timeout=120s
-```
-
-#### 5. Verify the IP was assigned from ipRange
-
-The DRA ResourceClaim `status.devices[].networkData` contains the network information
-populated by the DRANET driver after device allocation. This approach works regardless
-of whether the container image includes network tools (`ip`, `ls`, etc.):
-
-```bash
-for pod in $(kubectl get pods -l numaflow.numaproj.io/pipeline-name=e2e-gpu-direct-pipeline -o name | grep -E 'in-|out-'); do
+# Filter by vertex-domain label (same entry point as the controller)
+for pod in $(kubectl get pods -l gpu-direct-comm.numaproj.io/vertex-domain=true,numaflow.numaproj.io/pipeline-name=e2e-full-flow-pipeline -o name); do
   pod_name=$(echo "$pod" | sed 's|pod/||')
   node=$(kubectl get "$pod" -o jsonpath='{.spec.nodeName}')
   echo "=== $pod_name (node: $node) ==="
@@ -222,170 +155,146 @@ for pod in $(kubectl get pods -l numaflow.numaproj.io/pipeline-name=e2e-gpu-dire
     kubectl get resourceclaim "$claim" -o jsonpath='{range .status.devices[*]}    Interface: {.networkData.interfaceName}  MAC: {.networkData.hardwareAddress}  IPs: {.networkData.ips[*]}{"\n"}{end}'
   done
 done
-# Expect an IP inside 192.168.140.0/24 on dummy0 for both in and out vertex Pods
+# Expected: vertex Pods participating in direct binding have an IP within 192.168.140.0/24 on dummy0
 ```
 
-#### 6. Verify IPs are released on Pipeline deletion
+#### 3. Verify FQDN records in etcd
+
+vertexDomainController registers the Secondary NIC IP of Pods with the `vertex-domain=true` label into CoreDNS etcd. The FQDN format is `<vertex>.<pipeline>.<namespace>.vertexdomain.local`.
 
 ```bash
+# List DNS record keys in etcd
+kubectl -n kube-system exec etcd-coredns-0 -- \
+  etcdctl get --prefix /skydns/local/vertexdomain/default/e2e-full-flow-pipeline/ --keys-only
+# Expected: one key per Pod for both in and out vertices
+#   /skydns/local/vertexdomain/default/e2e-full-flow-pipeline/in/<pod-id>
+#   /skydns/local/vertexdomain/default/e2e-full-flow-pipeline/out/<pod-id>
+
+# Check the value of each record (Secondary NIC IP of each Pod)
+kubectl -n kube-system exec etcd-coredns-0 -- \
+  etcdctl get --prefix /skydns/local/vertexdomain/default/e2e-full-flow-pipeline/ --print-value-only
+# Expected: each record is a JSON object like {"host":"192.168.140.x"}
+```
+
+#### 4. Verify DNS resolution of destination vertex from within the pipeline
+
+Resolve the destination (To: `out`) vertex FQDN from the source (From: `in`) side and verify that destination Pod IPs are returned (ADR-004: single-direction communication). The `out` vertex has `scale.min: 2`, so multiple IPs are returned from the same FQDN (round-robin).
+
+```bash
+# Start a temporary Pod for DNS verification
+kubectl run e2e-dns-test --image=busybox:1.36 --restart=Never -- sleep 3600
+kubectl wait --for=condition=Ready pod/e2e-dns-test --timeout=30s
+
+# Resolve the out vertex (destination) FQDN (2 Pods -> 2 IPs, round-robin)
+# In direct communication, the From side resolves the To side's FQDN to get destination IPs
+kubectl exec e2e-dns-test -- nslookup out.e2e-full-flow-pipeline.default.vertexdomain.local
+# Expected: Address lines contain one or more IPs within 192.168.140.x
+
+# Do not delete the test Pod yet — it is used in step 5
+```
+
+#### 5. Delete the Pipeline and verify resource cleanup
+
+Delete the Pipeline and NumaNetwork, then verify that all DNS records and IP addresses are cleaned up:
+
+```bash
+# Delete the Pipeline and NumaNetwork
+kubectl delete -f config/testdata/e2e_full_flow_local.yaml --wait=true --timeout=60s
+
+# Verify DNS records are deleted from etcd
+kubectl -n kube-system exec etcd-coredns-0 -- \
+  etcdctl get --prefix /skydns/local/vertexdomain/default/e2e-full-flow-pipeline/ --keys-only
+# Expected: no output (all records deleted)
+
+# Verify nslookup returns NXDOMAIN
+kubectl exec e2e-dns-test -- nslookup out.e2e-full-flow-pipeline.default.vertexdomain.local
+# Expected: NXDOMAIN
+
+# Verify whereabouts IP pool allocations are released
 kubectl get ippools.whereabouts.cni.cncf.io -A -o jsonpath='{.items[0].spec.allocations}'
-kubectl delete pipeline e2e-gpu-direct-pipeline
-sleep 5
-kubectl get ippools.whereabouts.cni.cncf.io -A -o jsonpath='{.items[0].spec.allocations}'
-# Expect the allocations map to become empty ({}) after deletion
+# Expected: empty ({})
+
+# Delete the test Pod
+kubectl delete pod e2e-dns-test
 ```
 
-#### Cleanup
-
-```bash
-kubectl delete -f config/testdata/e2e_ip_assign_local.yaml
-```
-
-To fully revert DRANET to its pre-test state (remove webhook args, restore dnsPolicy, and restore the official image), run the following. Note that in a production environment you would keep the webhook args and dnsPolicy — only the image swap is temporary:
-
-```bash
-kubectl -n kube-system patch ds dranet --type=json -p='[
-  {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"registry.k8s.io/networking/dranet:stable"},
-  {"op":"replace","path":"/spec/template/spec/dnsPolicy","value":"Default"},
-  {"op":"remove","path":"/spec/template/spec/containers/0/args/4"},
-  {"op":"remove","path":"/spec/template/spec/containers/0/args/3"}
-]'
-```
-
-> Steps 1–6 above are currently a manual walkthrough, not an automated test target. `make test-e2e` (`test/e2e/`) is the kubebuilder-scaffolded generic suite — it spins up its own Kind cluster and does not exercise DRANET, whereabouts, or `NumaNetwork` at all. Do not run it expecting it to cover the flow described in this section.
+> Steps 1–5 above are currently a manual walkthrough, not an automated test target. `make test-e2e` (`test/e2e/`) is the kubebuilder-scaffolded generic suite — it spins up its own Kind cluster and does not exercise DRANET, whereabouts, or `NumaNetwork` at all. Do not run it expecting it to cover the flow described in this section.
 
 ### Bare-metal Cluster
 
-E2E validation on bare-metal follows the same flow as the [Local Cluster](#local-cluster) above — a NumaNetwork-annotated Pipeline is deployed and both vertex Pods must receive an IP from `NumaNetwork.spec.refResourceClaimDranet.ipRange` on their Secondary NIC (an SR-IOV VF). The differences from the Local Cluster are:
+E2E validation on bare-metal verifies the same Goal 1 (IP assignment) + Goal 2 (DNS resolution) as the [Local Cluster](#local-cluster) above. The differences from the Local Cluster are:
 
 - No `dummy0` interface is needed — real SR-IOV VFs serve as the Secondary NIC.
-- The narrowed E2E `DeviceClass` (`config/testdata/e2e_deviceclass_dranet_local.yaml`) is not required unless your hardware also publishes non-NIC devices through DRANET.
-- The DRANET pinned image must be pulled from a registry (no `k3d image import`).
-- IP verification uses SSH + `nsenter` instead of `docker exec`.
+- IP verification uses the DRA ResourceClaim `networkData` instead of `docker exec`.
 
-**Prerequisite**: Complete the [Bare-metal Cluster](docs/setup-guide.md#2-bare-metal-cluster) environment setup first — including SR-IOV VF preparation, the cluster/GPU/DRA/Numaflow layer via `numaflow-dra-ansible`, then DRANET, the `dranet` DeviceClass, whereabouts, cert-manager, ISBSvc, and gpu-direct-comm components (CRD, controller manager, `webhook-whereabouts-numanetwork`) must all be deployed and `READY`.
+**Prerequisite**: Complete the [Bare-metal Cluster](docs/setup-guide.md#2-bare-metal-cluster) environment setup first, and make sure all checks pass.
 
-#### 0. Verify SR-IOV VFs are recognized by DRANET
-
-Before starting the E2E flow, confirm that DRANET has detected the SR-IOV VFs on each worker node.
-
-DRANET publishes every NIC on a node as a device inside a `ResourceSlice` object (one per node per driver). Each device carries a set of `dra.net/*` attributes. DRANET sets `dra.net/isSriovVf: true` exclusively on VFs; PFs, non-SR-IOV physical NICs, and software interfaces lack this attribute entirely.
-
-Run the following command to list only VF devices across all nodes:
+To run all steps at once:
 
 ```bash
-kubectl get resourceslices -o json | jq -r '
-  .items[]
-  | select(.spec.driver == "dra.net")
-  | .spec.nodeName as $node
-  | .spec.devices[]
-  | select(.attributes["dra.net/isSriovVf"].bool == true)
-  | "\($node): \(.attributes["dra.net/ifName"].string) (PCI: \(.attributes["dra.net/pciAddress"].string))"
-'
+# Goal 1 + Goal 2 full flow
+make test-e2e-full-baremetal
+# Or: ./hack/e2e-full-flow.sh --env baremetal
 ```
 
-You should see one line per VF on each worker node. If no VF entries appear, revisit [SR-IOV VF preparation](docs/setup-guide.md#1-sr-iov-vf-preparation) in the setup guide.
+The individual steps below explain what the script does.
 
-Also confirm the VF-specific DeviceClass from the setup guide is deployed:
+#### 1. Deploy the Pipeline (NumaNetwork + ISBSvc + Pipeline)
 
-```bash
-kubectl get deviceclass dranet-e2e-baremetal
-# Expected: the DeviceClass with AGE
-```
-
-If the DeviceClass does not exist, revisit the [DeviceClass creation](docs/setup-guide.md#3-deviceclass-creation) step in the setup guide.
-
-#### 1. Configure DRANET for BYODP webhook integration
-
-Same as [Local Cluster step 3](#3-configure-dranet-for-byodp-webhook-integration), with one difference: bare-metal nodes pull images from a registry, not via `k3d image import`. Ensure the pinned DRANET image is available in a registry your nodes can reach:
+`config/testdata/e2e_full_flow_baremetal.yaml` uses `ipRange: "192.168.140.0/24"`. This assumes no real network on your hardware already occupies that range. If it conflicts with your environment, adjust `NumaNetwork.spec.refResourceClaimDranet.ipRange` in a copy of the manifest:
 
 ```bash
-# If your nodes can pull directly from gcr.io:
-kubectl -n kube-system patch ds dranet --type=json -p='[
-  {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5"},
-  {"op":"replace","path":"/spec/template/spec/dnsPolicy","value":"ClusterFirstWithHostNet"},
-  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--profile-provider=webhook"},
-  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--webhook-url=http://webhook-whereabouts-numanetwork.kube-system.svc:8443"}
-]'
-kubectl -n kube-system rollout status ds/dranet --timeout=90s
-```
-
-If your nodes cannot reach `gcr.io`, mirror the image to your private registry first (`docker pull` + `docker tag` + `docker push`), then use the mirrored image reference in the patch above.
-
-> As with the Local Cluster, check whether an official DRANET release now includes BYODP before reusing this pinned tag — see [Local Cluster step 3](#3-configure-dranet-for-byodp-webhook-integration) for the rationale and how to check.
-
-#### 2. Deploy the Pipeline (NumaNetwork + Pipeline)
-
-`config/testdata/e2e_ip_assign_baremetal.yaml` uses `ipRange: "192.168.140.0/24"`, which assumes no real network on your hardware already occupies that range. Adjust the `NumaNetwork.spec.refResourceClaimDranet.ipRange` in a copy of the manifest if it conflicts with your environment:
-
-```bash
-kubectl apply -f config/testdata/e2e_ip_assign_baremetal.yaml
-kubectl get resourceclaimtemplate e2e-numanetwork-rct   # created by the controller
-kubectl wait --for=condition=Ready pod -l numaflow.numaproj.io/pipeline-name=e2e-gpu-direct-pipeline --timeout=120s
+kubectl apply -f config/testdata/e2e_full_flow_baremetal.yaml
+kubectl get resourceclaimtemplate e2e-full-flow-nn-rct   # created by the controller
+kubectl wait --for=condition=Ready pod -l numaflow.numaproj.io/pipeline-name=e2e-full-flow-pipeline,app.kubernetes.io/component=vertex --timeout=120s
 ```
 
 If Pods stay `Pending`, check events for ResourceClaim allocation failures — a common cause is the DeviceClass not matching any VF devices:
 
 ```bash
-kubectl describe pod -l numaflow.numaproj.io/pipeline-name=e2e-gpu-direct-pipeline | grep -A5 Events
+kubectl describe pod -l numaflow.numaproj.io/pipeline-name=e2e-full-flow-pipeline | grep -A5 Events
 ```
 
-#### 3. Verify the IP was assigned from ipRange
+#### 2. Verify IP assignment from ipRange
 
-The DRA ResourceClaim `status.devices[].networkData` contains the network information
-populated by the DRANET driver after device allocation. This approach does not require
-SSH access or `sudo` privileges on the bare-metal nodes:
+Same as [Local Cluster step 2](#2-verify-ip-assignment-from-iprange).
 
-```bash
-for pod in $(kubectl get pods -l numaflow.numaproj.io/pipeline-name=e2e-gpu-direct-pipeline -o name | grep -E 'in-|out-'); do
-  pod_name=$(echo "$pod" | sed 's|pod/||')
-  node=$(kubectl get "$pod" -o jsonpath='{.spec.nodeName}')
-  echo "=== $pod_name (node: $node) ==="
-  # resourceClaimStatuses[] — list of ResourceClaims bound to this Pod
-  for claim in $(kubectl get "$pod" -o jsonpath='{.status.resourceClaimStatuses[*].resourceClaimName}'); do
-    echo "  Claim: $claim"
-    # devices[]          — each allocated device in the claim
-    # networkData.ips[]  — IP addresses assigned by the IPAM provider (whereabouts)
-    # networkData.interfaceName      — NIC name inside the Pod (e.g. enp4s0f0v0)
-    # networkData.hardwareAddress    — MAC address of the NIC
-    kubectl get resourceclaim "$claim" -o jsonpath='{range .status.devices[*]}    Interface: {.networkData.interfaceName}  MAC: {.networkData.hardwareAddress}  IPs: {.networkData.ips[*]}{"\n"}{end}'
-  done
-done
-# Expect an IP inside NumaNetwork.spec.refResourceClaimDranet.ipRange on the Secondary NIC of both in and out vertex Pods
-```
+The Secondary NIC interface name depends on your hardware (e.g. `enp4s0f0v0`). It is shown in the `Interface` field of the output.
 
-The Secondary NIC interface name depends on your hardware (e.g. `enp4s0f0v0`). It is shown in the `Interface` field of the output above.
+#### 3. Verify FQDN records in etcd
 
-#### 4. Verify IPs are released on Pipeline deletion
+Same as [Local Cluster step 3](#3-verify-fqdn-records-in-etcd).
 
-Same as [Local Cluster step 6](#6-verify-ips-are-released-on-pipeline-deletion):
+#### 4. Verify DNS resolution of destination vertex from within the pipeline
+
+Same as [Local Cluster step 4](#4-verify-dns-resolution-of-destination-vertex-from-within-the-pipeline).
+
+#### 5. Delete the Pipeline and verify resource cleanup
+
+Delete the Pipeline and NumaNetwork, then verify that all DNS records and IP addresses are cleaned up:
 
 ```bash
+# Delete the Pipeline and NumaNetwork
+kubectl delete -f config/testdata/e2e_full_flow_baremetal.yaml --wait=true --timeout=60s
+
+# Verify DNS records are deleted from etcd
+kubectl -n kube-system exec etcd-coredns-0 -- \
+  etcdctl get --prefix /skydns/local/vertexdomain/default/e2e-full-flow-pipeline/ --keys-only
+# Expected: no output (all records deleted)
+
+# Verify nslookup returns NXDOMAIN
+kubectl exec e2e-dns-test -- nslookup out.e2e-full-flow-pipeline.default.vertexdomain.local
+# Expected: NXDOMAIN
+
+# Verify whereabouts IP pool allocations are released
 kubectl get ippools.whereabouts.cni.cncf.io -A -o jsonpath='{.items[0].spec.allocations}'
-kubectl delete pipeline e2e-gpu-direct-pipeline
-sleep 5
-kubectl get ippools.whereabouts.cni.cncf.io -A -o jsonpath='{.items[0].spec.allocations}'
-# Expect the allocations map to become empty ({}) after deletion
+# Expected: empty ({})
+
+# Delete the test Pod
+kubectl delete pod e2e-dns-test
 ```
 
-#### Cleanup
-
-```bash
-kubectl delete -f config/testdata/e2e_ip_assign_baremetal.yaml
-```
-
-To fully revert DRANET to its pre-test state (remove webhook args, restore dnsPolicy, and restore the official image), run the following. Note that in a production environment you would keep the webhook args and dnsPolicy — only the image swap is temporary:
-
-```bash
-kubectl -n kube-system patch ds dranet --type=json -p='[
-  {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"registry.k8s.io/networking/dranet:stable"},
-  {"op":"replace","path":"/spec/template/spec/dnsPolicy","value":"Default"},
-  {"op":"remove","path":"/spec/template/spec/containers/0/args/4"},
-  {"op":"remove","path":"/spec/template/spec/containers/0/args/3"}
-]'
-```
-
-> As on the Local Cluster, this is currently a manual walkthrough, not an automated CI target.
+> As with the Local Cluster, this is currently a manual walkthrough, not an automated CI target.
 
 ## Commit Messages
 

@@ -22,7 +22,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "=== Step 1: Deploy etcd and CoreDNS custom config ==="
-kubectl apply -k config/coredns-etcd/
+kubectl apply -k config/coredns-etcd/local/
 kubectl -n kube-system wait --for=condition=Ready pod/etcd-coredns-0 --timeout=60s
 
 echo "=== Step 2: Restart CoreDNS to load vertexdomain.local zone ==="

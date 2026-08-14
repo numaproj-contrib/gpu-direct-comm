@@ -1,0 +1,31 @@
+# Patch the etcd-coredns Service ClusterIP and StatefulSet advertise URL
+# for bare-metal (kubeadm) environments.
+#
+# The base manifests use 10.43.200.53 (k3s default Service CIDR 10.43.0.0/16).
+# Change 10.96.200.53 below to an unused IP within your cluster's Service CIDR.
+#
+# To find your Service CIDR:
+#   kubectl cluster-info dump | grep -m 1 service-cluster-ip-range
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd-coredns
+  namespace: kube-system
+spec:
+  clusterIP: 10.96.200.53
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: etcd-coredns
+  namespace: kube-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: etcd
+          command:
+            - etcd
+            - --listen-client-urls=http://0.0.0.0:2379
+            - --advertise-client-urls=http://10.96.200.53:2379
+            - --data-dir=/var/lib/etcd

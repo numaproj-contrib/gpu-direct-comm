@@ -4,11 +4,11 @@ This guide explains how to set up the environments used by gpu-direct-comm. Choo
 
 > 日本語版はこちら: [setup-guide.ja.md](./setup-guide.ja.md)
 
-## 1. Local Cluster
+## Local Cluster
 
 For running the controller and its dependencies against a k3d cluster. This is the standard development workflow.
 
-### Required tools
+### 0. Required tools
 
 - Go 1.25+
 - Docker
@@ -19,9 +19,9 @@ For running the controller and its dependencies against a k3d cluster. This is t
 - [cert-manager](https://cert-manager.io/)
 - [whereabouts](https://github.com/k8snetworkingplumbingwg/whereabouts)
 
-### Prerequisite environment (cluster + Numaflow)
+### 1. Prerequisite environment (cluster + Numaflow)
 
-#### 1. k3d cluster creation
+#### 1-1. k3d cluster creation
 
 Create a cluster using the config file at the repository root:
 
@@ -44,7 +44,7 @@ kubectl config current-context
 # Expected: k3d-numaflow-cluster
 ```
 
-#### 2. Numaflow installation
+#### 1-2. Numaflow installation
 
 Install Numaflow from its published release manifest — no need to build it yourself unless you are developing Numaflow itself (see the optional path below):
 
@@ -59,7 +59,7 @@ After installation, verify that all Numaflow components are running:
 
 ```bash
 kubectl get pods -n numaflow-system
-# Expected: numaflow-controller, numaflow-server, numaflow-dex-server
+# Expected: numaflow-controller, numaflow-server, numaflow-dex-server — all Running
 ```
 
 > `config/install.yaml` does not include `numaflow-webhook` (Numaflow's own validating webhook for Pipeline/InterStepBufferService immutable-field checks) — it ships separately. It is optional: gpu-direct-comm's own webhooks do not depend on it. To install it as well:
@@ -79,25 +79,56 @@ kubectl get pods -n numaflow-system
 >
 > This builds the Numaflow container image and installs it into the cluster (again targeting `k3d-numaflow-cluster` via `current-context`), in place of the `kubectl apply` above. For the full Numaflow build environment setup (Go, Rust, protoc, etc.), see the [Numaflow Development](https://numaflow.numaproj.io/development/development/) documentation.
 
-#### InterStepBufferService (ISBSvc) deployment
+#### 1-3. InterStepBufferService (ISBSvc) creation
 
-Numaflow Pipelines require an InterStepBufferService (JetStream) to be running and healthy before they can be created — Numaflow's own ValidatingWebhook rejects Pipeline creation if the ISBSvc is not yet ready. Deploy it once after Numaflow installation:
+Numaflow Pipelines require an ISBSvc to buffer messages between vertices. The Pipeline defaults to using an ISBSvc named `default` when `spec.interStepBufferServiceName` is omitted. Create it now — without it, any Pipeline will fail with `isbsvc default not found`.
 
 ```bash
 kubectl apply -f config/testdata/isbsvc.yaml
-kubectl wait --for=jsonpath='{.status.phase}'=Running isbsvc/default --timeout=120s
 ```
 
-Verify the JetStream Pods are running:
+Wait for the JetStream Pods to start:
 
 ```bash
-kubectl get pods -l numaflow.numaproj.io/isbsvc-name=default
-# Expected: isbsvc-default-js-0, isbsvc-default-js-1, isbsvc-default-js-2 — all Running, READY 3/3
+kubectl wait pod -n default -l numaflow.numaproj.io/isbsvc-name=default --for=condition=Ready --timeout=120s
 ```
 
-### gpu-direct-comm environment setup
+Verify:
 
-#### 3. DRANET installation
+```bash
+kubectl get isbsvc
+# Expected: default — Running
+```
+
+> This deploys a minimal ISBSvc with `version: "latest"` and no persistent storage — data is lost on Pod restart. This is acceptable for local development. The Bare-metal Cluster uses a production-grade ISBSvc deployed by `numaflow-dra-ansible` with pinned JetStream version and PersistentVolume-backed storage.
+
+### 2. gpu-direct-comm environment setup
+
+#### 2-1. Dummy interface creation
+
+In production, SR-IOV VFs (virtual partitions of a physical NIC) serve as the secondary NICs for direct GPU-to-GPU communication. A local k3d cluster has no SR-IOV hardware, so Linux **dummy interfaces** are used as stand-ins for real NICs. DRANET's own upstream E2E tests use the same approach.
+
+k3d runs each Kubernetes node as a Docker container. First, confirm the node containers are running:
+
+```bash
+docker ps --filter "name=k3d-numaflow-cluster" --format "{{.Names}}"
+# Expected: k3d-numaflow-cluster-server-0, -agent-0, -agent-1
+```
+
+Create and bring up a `dummy0` interface inside each node container:
+
+```bash
+for node in k3d-numaflow-cluster-server-0 k3d-numaflow-cluster-agent-0 k3d-numaflow-cluster-agent-1; do
+  docker exec "$node" sh -c "ip link show dummy0 >/dev/null 2>&1 || (ip link add dummy0 type dummy && ip link set up dev dummy0)"
+done
+```
+
+- `ip link add dummy0 type dummy` — creates a virtual network interface named `dummy0`.
+- `ip link set up dev dummy0` — brings the interface UP so DRANET can detect it.
+
+When DRANET is installed in the next step, it will auto-detect `dummy0` on each node and publish the devices as Kubernetes **ResourceSlice** objects.
+
+#### 2-2. DRANET installation
 
 DRANET is the DRA (Dynamic Resource Allocation) driver that publishes NICs as `ResourceSlice` objects and attaches them to Pods.
 
@@ -122,7 +153,7 @@ options:
         nodeFilters: ["server:*", "agent:*"]
 ```
 
-#### 4. DeviceClass creation
+#### 2-3. DeviceClass creation
 
 A `DeviceClass` tells Kubernetes which DRANET-published devices are eligible for allocation. `NumaNetwork.spec.refDeviceClass.name` must reference this object. The local cluster uses a DeviceClass that filters to `dummy` type interfaces only:
 
@@ -137,7 +168,7 @@ kubectl get deviceclass dranet-e2e-local
 # Expected: the DeviceClass with AGE
 ```
 
-#### 5. whereabouts installation
+#### 2-4. whereabouts installation
 
 whereabouts is the CNI IPAM plugin that `webhook-whereabouts-numanetwork` execs to allocate IPs from `NumaNetwork.spec.refResourceClaimDranet.ipRange`. Its DaemonSet also writes a per-node flat config file (`/etc/cni/net.d/whereabouts.d/whereabouts.conf`, including a kubeconfig for talking to the IPPool CRDs) that `webhook-whereabouts-numanetwork` depends on — install it before deploying the webhook.
 
@@ -153,7 +184,7 @@ kubectl -n kube-system exec ds/whereabouts -- cat /host/etc/cni/net.d/whereabout
 # Expected: JSON with "kubeconfig" field pointing to a valid path
 ```
 
-#### 6. cert-manager installation
+#### 2-5. cert-manager installation
 
 The gpu-direct-comm controller manager's webhook (`internal/webhook/v1alpha1`) requires TLS certificates managed by cert-manager (`config/default/kustomization.yaml` includes `../certmanager`).
 
@@ -169,11 +200,11 @@ kubectl get pods -n cert-manager
 # Expected: cert-manager, cert-manager-cainjector, cert-manager-webhook — all Running
 ```
 
-#### 7. gpu-direct-comm installation
+#### 2-6. gpu-direct-comm installation
 
-The following three sub-steps install components built from this repository's source code.
+The following sub-steps install components built from this repository's source code.
 
-##### 7-1. gpu-direct-comm CRD installation
+##### 2-6-1. gpu-direct-comm CRD installation
 
 ```bash
 make install
@@ -188,7 +219,7 @@ kubectl get crd numanetworks.numaflow.numaproj.io
 # Expected: the CRD with CREATED AT timestamp
 ```
 
-##### 7-2. gpu-direct-comm controller manager deployment
+##### 2-6-2. gpu-direct-comm controller manager deployment
 
 ```bash
 make docker-build IMG=controller:latest
@@ -204,7 +235,7 @@ kubectl get pods -n gpu-direct-comm-system
 # Expected: gpu-direct-comm-controller-manager-... — Running, READY 1/1
 ```
 
-##### 7-3. webhook-whereabouts-numanetwork build and deployment
+##### 2-6-3. webhook-whereabouts-numanetwork build and deployment
 
 `webhook-whereabouts-numanetwork` is the custom dranet BYODP (Bring Your Own DRANET Provider) webhook implemented in this repository (`cmd/webhook-whereabouts-numanetwork`, `internal/ipam`). It resolves a `NumaNetwork`'s `ipRange` and execs `whereabouts` to allocate an IP.
 
@@ -219,11 +250,40 @@ Verify that the webhook Pods are ready. `READY 1/1` means the readinessProbe
 already confirmed `/health` is responding — no separate health check is needed:
 
 ```bash
-kubectl -n kube-system get pods -l app.kubernetes.io/name=webhook-whereabouts-numanetwork
+kubectl -n kube-system get pods -l app=webhook-whereabouts-numanetwork
 # Expected: one Pod per node — all Running, READY 1/1
 ```
 
-##### 7-4. CoreDNS etcd backend setup
+##### 2-6-4. DRANET BYODP webhook integration
+
+This step configures DRANET to delegate IPAM to `webhook-whereabouts-numanetwork` (the webhook built by this project). The patch applies three types of changes:
+
+- **Webhook arguments (always required)**: `--profile-provider=webhook` and `--webhook-url` tell DRANET to call the webhook for IP assignment during NIC allocation. Required permanently in every environment using gpu-direct-comm.
+- **dnsPolicy (always required)**: DRANET runs with `hostNetwork: true`, so the default `dnsPolicy: Default` uses the host DNS resolver which cannot resolve cluster-internal `.svc` names. `ClusterFirstWithHostNet` forces cluster DNS.
+- **Image override (temporary)**: At the time of writing, the official `registry.k8s.io/networking/dranet:stable` tag is built from `v1.3.0` (released 2026-05-28), which predates the BYODP webhook feature ([dranet PR #223](https://github.com/kubernetes-sigs/dranet/pull/223), merged 2026-06-10). Use the CI-built image until it is included in an official release:
+
+```bash
+docker pull gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5
+k3d image import gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5 -c numaflow-cluster
+```
+
+> Before reusing this pinned tag in the future, check whether the official release now includes BYODP: run `crane ls registry.k8s.io/networking/dranet` and check the [dranet releases page](https://github.com/kubernetes-sigs/dranet/releases) for a version after PR #223. If one exists, skip the `docker pull`/`k3d image import` above and use the official `stable` tag.
+
+Apply the patch:
+
+```bash
+kubectl -n kube-system patch ds dranet --type=json -p='[
+  {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5"},
+  {"op":"replace","path":"/spec/template/spec/dnsPolicy","value":"ClusterFirstWithHostNet"},
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--profile-provider=webhook"},
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--webhook-url=http://webhook-whereabouts-numanetwork.kube-system.svc:8443"}
+]'
+kubectl -n kube-system rollout status ds/dranet --timeout=90s
+```
+
+> dranet crashes immediately (`Fatal`) if it cannot reach the `/health` endpoint of the `--webhook-url` on startup. Therefore, `webhook-whereabouts-numanetwork` must be deployed and `READY` *before* this step — switching dranet to webhook mode first and deploying the webhook afterward will cause a crash-loop.
+
+##### 2-6-5. CoreDNS etcd backend setup
 
 This step sets up name resolution for the `vertexdomain.local` zone using CoreDNS's [etcd plugin](https://coredns.io/plugins/etcd/). It deploys two components:
 
@@ -235,7 +295,7 @@ This step sets up name resolution for the `vertexdomain.local` zone using CoreDN
 Deploy both etcd and the CoreDNS config with kustomize:
 
 ```bash
-kubectl apply -k config/coredns-etcd/
+kubectl apply -k config/coredns-etcd/local/
 kubectl -n kube-system wait --for=condition=Ready pod/etcd-coredns-0 --timeout=60s
 ```
 
@@ -246,51 +306,38 @@ kubectl -n kube-system rollout restart deployment/coredns
 kubectl -n kube-system rollout status deployment/coredns --timeout=60s
 ```
 
-Verify that etcd is healthy and CoreDNS has loaded the `vertexdomain.local` zone:
+Verify that etcd is healthy and CoreDNS recognizes the `vertexdomain.local` zone:
 
 ```bash
+# Check etcd health
 kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
 # Expected: 127.0.0.1:2379 is healthy: successfully committed proposal: took = ...
 
-kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
-# Expected: log output mentioning vertexdomain.local.:53 (no errors)
-```
-
-Verify end-to-end by registering a test A record in etcd and resolving it via CoreDNS:
-
-```bash
-# Register a test A record
-kubectl -n kube-system exec etcd-coredns-0 -- etcdctl put \
-  /skydns/local/vertexdomain/default/pipeline1/vertex-in \
-  '{"host":"192.168.140.10"}'
-
-# Start a test Pod and resolve via CoreDNS
-kubectl run dns-test --restart=Never --image=busybox:1.37 -- sleep 3600
-kubectl wait --for=condition=Ready pod/dns-test --timeout=30s
-kubectl exec dns-test -- nslookup vertex-in.pipeline1.default.vertexdomain.local
-# Expected:
-#   Server:    10.43.0.10
-#   Address:   10.43.0.10:53
-#   Name:      vertex-in.pipeline1.default.vertexdomain.local
-#   Address:   192.168.140.10
-
-# Delete the record and confirm NXDOMAIN
-kubectl -n kube-system exec etcd-coredns-0 -- etcdctl del \
-  /skydns/local/vertexdomain/default/pipeline1/vertex-in
-kubectl exec dns-test -- nslookup vertex-in.pipeline1.default.vertexdomain.local
+# Query a non-existent name in the zone to confirm the zone is loaded
+# NXDOMAIN = zone is loaded (just no records yet)
+# SERVFAIL = zone is not configured
+kubectl run dns-check --rm -i --restart=Never \
+  --image=busybox:1.37 -- nslookup dummy.vertexdomain.local
 # Expected: ** server can't find ... NXDOMAIN
-
-# Clean up the test Pod
-kubectl delete pod dns-test
+kubectl delete pod dns-check --ignore-not-found
 ```
+
+> Full end-to-end data path verification (A record registration, name resolution, and deletion via etcd → CoreDNS → Pod) is covered by the E2E test (`make test-e2e-full-local`).
 
 > This deploys a single-instance etcd with `emptyDir` storage — data is lost on Pod restart. This is acceptable for development: the vertexDomainManager reconciles Pod state and re-creates DNS records on startup. Production HA is out of scope for MVP.
 
-> **Service CIDR note**: The `etcd-coredns` Service uses a fixed ClusterIP (`10.43.200.53`). CoreDNS runs with `dnsPolicy: Default` (node DNS) and cannot resolve cluster-internal Service names, so the etcd endpoint must be an IP address. If your environment uses a Service CIDR other than the k3s default (`10.43.0.0/16`), update both the `clusterIP` in `etcd-standalone.yaml` and the `endpoint` in `coredns-custom-configmap.yaml`.
+> **Service CIDR note**: The `etcd-coredns` Service uses a fixed ClusterIP (`10.43.200.53`). CoreDNS runs with `dnsPolicy: Default` (node DNS) and cannot resolve cluster-internal Service names, so the etcd endpoint must be an IP address. The Local Cluster overlay (`config/coredns-etcd/local/`) uses this default value for the k3s Service CIDR (`10.43.0.0/16`). The Bare-metal Cluster overlay (`config/coredns-etcd/baremetal/`) overrides it via `patch-clusterip.yaml` to match the kubeadm Service CIDR.
 
-### Verify
+### 3. Verify
 
 Run all checks at once to confirm the environment is fully operational:
+
+```bash
+make verify-setup
+# or: ./hack/verify-setup.sh
+```
+
+To check each component individually, run the following commands manually:
 
 ```bash
 # k3d cluster context
@@ -300,6 +347,10 @@ kubectl config current-context
 # Numaflow components
 kubectl get pods -n numaflow-system
 # Expected: numaflow-controller, numaflow-server, numaflow-dex-server — all Running (plus numaflow-webhook if you installed the optional validating webhook)
+
+# ISBSvc
+kubectl get isbsvc
+# Expected: default — Running
 
 # DRANET devices
 kubectl get resourceslice
@@ -329,28 +380,44 @@ kubectl get pods -n gpu-direct-comm-system
 kubectl -n kube-system get ds whereabouts dranet webhook-whereabouts-numanetwork
 # Expected: all DaemonSets READY on every node
 
+# DRANET BYODP webhook integration (--profile-provider=webhook must be set)
+kubectl -n kube-system get ds dranet -o jsonpath='{.spec.template.spec.containers[0].args}'
+# Expected: includes --profile-provider=webhook and --webhook-url=...
+
 # CoreDNS etcd backend
 kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
 # Expected: 127.0.0.1:2379 is healthy
-kubectl -n kube-system logs -l k8s-app=kube-dns --tail=20 | grep vertexdomain
-# Expected: log output mentioning vertexdomain.local.:53 (no errors)
+kubectl run dns-check --rm -i --restart=Never \
+  --image=busybox:1.37 -- nslookup dummy.vertexdomain.local
+# Expected: NXDOMAIN (zone is loaded)
+kubectl delete pod dns-check --ignore-not-found
 ```
+
+Once all checks pass, you can run the full-flow E2E test:
+
+```bash
+make test-e2e-full-local
+# or: ./hack/e2e-full-flow.sh --env local
+```
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md#local-cluster) for details.
 
 ---
 
-## 2. Bare-metal Cluster
+## Bare-metal Cluster
 
 For running the controller on a multi-node bare-metal cluster with real NVIDIA GPU and SR-IOV VF hardware.
 
-### Hardware prerequisites
+### 0. Prerequisites
+#### 0-1. Hardware prerequisites
 
 Each worker node must have the following hardware installed.
 
-#### GPU
+##### 0-1-1. GPU
 
 - NVIDIA GPU (DRA driver compatible — set up via the `dra-driver-nvidia-gpu` role in `numaflow-dra-ansible`)
 
-#### d-plane NIC
+##### 0-1-2. d-plane NIC
 
 Each worker node must have a NIC connected to the data plane (d-plane) that satisfies the following requirements.
 
@@ -364,12 +431,12 @@ Each worker node must have a NIC connected to the data plane (d-plane) that sati
 
 | Vendor | NIC | Driver | RDMA protocol | Notes |
 |--------|-----|--------|---------------|-------|
-| NVIDIA/Mellanox | ConnectX-6 or later | `mlx5_core` (OFED) | RoCE v2 (Ethernet) / Native IB RDMA (InfiniBand) | Verified for GPUDirect RDMA. VPI cards may require port mode switching (see [Step 2: Determine and configure the port mode](#step-2-determine-and-configure-the-port-mode)) |
+| NVIDIA/Mellanox | ConnectX-6 or later | `mlx5_core` (OFED) | RoCE v2 (Ethernet) / Native IB RDMA (InfiniBand) | Verified for GPUDirect RDMA. VPI cards may require port mode switching (see [2-1-2. Check port mode](#2-1-2-check-port-mode)) |
 | Intel | E810 | `ice` + `irdma` | RoCE v2 | Limited GPUDirect RDMA support |
 
-> Port mode must match the switch type (Ethernet switch → Ethernet mode / RoCE v2, InfiniBand switch → InfiniBand mode / Native IB RDMA). See [Step 2: Determine and configure the port mode](#step-2-determine-and-configure-the-port-mode) for details.
+> Port mode must match the switch type (Ethernet switch → Ethernet mode / RoCE v2, InfiniBand switch → InfiniBand mode / Native IB RDMA). See [2-1-2. Check port mode](#2-1-2-check-port-mode) for details.
 
-### Required tools
+#### 0-2. Required tools
 
 - Ansible control node (`ansible-core` >= 2.16) — used to drive [numaflow-dra-ansible](https://github.com/compsysg/numaflow-dra-ansible)
 - SSH access to every managed node
@@ -378,7 +445,7 @@ Each worker node must have a NIC connected to the data plane (d-plane) that sati
 - A container registry reachable from every cluster node (bare-metal nodes cannot use `k3d image import`)
 - [DRANET](https://github.com/kubernetes-sigs/dranet), [cert-manager](https://cert-manager.io/), [whereabouts](https://github.com/k8snetworkingplumbingwg/whereabouts) — installed in the gpu-direct-comm environment setup step below, not by the ansible playbook
 
-### Prerequisite environment (cluster, GPU, DRA, Numaflow)
+### 1. Prerequisite environment (cluster, GPU, DRA, Numaflow)
 
 Cluster provisioning, the NVIDIA GPU driver/toolkit, GPU DRA driver enablement, and Numaflow installation are delegated to [numaflow-dra-ansible](https://github.com/compsysg/numaflow-dra-ansible) (`~/project/numaflow-dra-ansible` in this workspace). Follow that repository's own README for inventory setup (`inventory/stg.yml`, copied from `inventory/inventory.yml.template`), then run the root playbook from within it:
 
@@ -393,7 +460,7 @@ This playbook installs, in order (see `site-stg-dci-poc.yml`):
 2. Kubernetes cluster via kubeadm + Calico CNI (`playbooks/kubernetes-cluster.yml`)
 3. NVIDIA GPU driver + container toolkit (`playbooks/nvidia-gpu-support.yml`)
 4. DRA feature gate + NVIDIA GPU DRA driver (`playbooks/dra-driver-nvidia-gpu.yml`)
-5. Numaflow (`playbooks/numaflow.yml`)
+5. Numaflow (`playbooks/numaflow.yml`) — the `numaflow_install` role also deploys the `local-static-provisioner`, PersistentVolumes (`pv-isbsvc1/2/3`), and the **ISBSvc** (`default`). Unlike the Local Cluster's ephemeral ISBSvc, this one uses a pinned JetStream version and PersistentVolume-backed storage
 6. Prometheus monitoring for Numaflow (`playbooks/monitor.yml`)
 
 > This playbook does **not** install DRANET, whereabouts, or any gpu-direct-comm component — those are set up in the next section, the same way as on the Local Cluster.
@@ -418,12 +485,16 @@ kubectl get pods -n nvidia-dra-driver-gpu
 kubectl get pods -n numaflow-system
 # Expected: numaflow-controller, numaflow-server, numaflow-dex-server — all Running
 
+# ISBSvc (deployed by the numaflow_install role)
+kubectl get isbsvc
+# Expected: default — Running
+
 # Prometheus monitoring
 kubectl get pods -n monitoring
 # Expected: prometheus-k8s, prometheus-operator and related Pods — all Running
 ```
 
-> As with the Local Cluster's default YAML install, `numaflow-webhook` is **not** expected here either. `numaflow-dra-ansible`'s `numaflow_install` role applies Numaflow's `config/install.yaml` — the same base manifest the Local Cluster uses by default — which does not include it (see the note under [Local Cluster > Numaflow installation](#numaflow-installation)). It is optional — gpu-direct-comm's own webhooks do not depend on it — but if you want it verified on bare-metal too, install it manually against the same Numaflow version the ansible playbook installed (see `numaflow_install.numaflow_version` in `vars-stg.yml`):
+> As with the Local Cluster's default YAML install, `numaflow-webhook` is **not** expected here either. `numaflow-dra-ansible`'s `numaflow_install` role applies Numaflow's `config/install.yaml` — the same base manifest the Local Cluster uses by default — which does not include it (see the note under [Local Cluster > 1-2. Numaflow installation](#1-2-numaflow-installation)). It is optional — gpu-direct-comm's own webhooks do not depend on it — but if you want it verified on bare-metal too, install it manually against the same Numaflow version the ansible playbook installed (see `numaflow_install.numaflow_version` in `vars-stg.yml`):
 >
 > ```bash
 > kubectl apply -n numaflow-system -f https://raw.githubusercontent.com/numaproj/numaflow/<numaflow_version>/config/validating-webhook-install.yaml
@@ -431,9 +502,9 @@ kubectl get pods -n monitoring
 > # Expected: numaflow-webhook — Running
 > ```
 
-### gpu-direct-comm environment setup
+### 2. gpu-direct-comm environment setup
 
-DRANET, the `dranet` DeviceClass, whereabouts, cert-manager, and gpu-direct-comm's own components (CRD, controller manager, `webhook-whereabouts-numanetwork`) are **not** part of `numaflow-dra-ansible`. Install them the same way as the [Local Cluster](#1-local-cluster) flow, with the substitutions noted below.
+DRANET, the `dranet` DeviceClass, whereabouts, cert-manager, and gpu-direct-comm's own components (CRD, controller manager, `webhook-whereabouts-numanetwork`) are **not** part of `numaflow-dra-ansible`. Install them the same way as the [Local Cluster](#local-cluster) flow, with the substitutions noted below.
 
 The install order reflects a dependency chain: each component relies on the one before it.
 
@@ -448,13 +519,13 @@ The install order reflects a dependency chain: each component relies on the one 
 
 > Steps 4 and 5 have no dependency on steps 1–3 and can be installed in any order relative to them, but must complete before step 6.
 
-#### 1. SR-IOV VF preparation
+#### 2-1. SR-IOV VF preparation
 
 SR-IOV Virtual Functions (VFs) must exist on each worker node's RDMA-capable NIC **before** DRANET is installed. DRANET's DaemonSet scans node interfaces on startup — if VFs do not exist yet, they will not appear as `ResourceSlice` entries.
 
 > VF creation only needs to be done once per node (it persists across reboots if made persistent via systemd — see below). If your environment already has VFs from a previous setup, skip to [Verify VFs are visible](#verify-vfs-are-visible).
 
-##### Step 1: Verify the RDMA-capable NIC is recognized
+##### 2-1-1. Verify the RDMA-capable NIC is recognized
 
 SSH into a worker node and confirm that the Mellanox/NVIDIA NIC is visible on the PCI bus:
 
@@ -467,7 +538,7 @@ lspci | grep -i mellanox
 
 If no output appears, the NIC may not be physically seated or the driver is not loaded.
 
-##### Step 2: Check port mode
+##### 2-1-2. Check port mode
 
 ConnectX VPI cards ship with ports defaulting to **InfiniBand mode**. The required mode depends on the switch the NIC is connected to:
 
@@ -488,9 +559,9 @@ sudo mstconfig -d 0000:${PCI_ADDR} query | grep LINK_TYPE
 #   LINK_TYPE_P2                        IB(1)
 ```
 
-Verify the port mode matches your expectation. If it does not, it will be changed in Step 5.
+Verify the port mode matches your expectation. If it does not, it will be changed later.
 
-##### Step 3: Check link state
+##### 2-1-3. Check link state
 
 **Identify which physical port has a cable connected.** Dual-port cards have two independent PFs — only the port with link will be used for VF creation.
 
@@ -528,19 +599,19 @@ done
 
 Note the interface name of the port with link — it will be used in VF status check and VF creation later.
 
-##### Step 4: Check VF creation status
+##### 2-1-4. Check VF creation status
 
 ```bash
 IFACE="<your-pf-name>"   # e.g. enp4s0f0np0 (Ethernet) or ib0 (InfiniBand)
 
 # Verify SR-IOV is enabled in firmware
 cat /sys/class/net/${IFACE}/device/sriov_totalvfs
-# Expected: 8 (the NUM_OF_VFS value set in Step 5)
+# Expected: 8 (the NUM_OF_VFS value set in step 2-1-5)
 ```
 
 If `sriov_totalvfs` does not exist, SR-IOV is not enabled at the firmware level. Enable it in the next step.
 
-##### Step 5: Change port mode and enable SR-IOV
+##### 2-1-5. Change port mode and enable SR-IOV
 
 **Apply firmware settings.** Port mode change and SR-IOV enablement are both firmware-level settings that require a reboot, so apply them together.
 
@@ -555,7 +626,7 @@ PCI_ADDR=$(lspci | grep -i mellanox | head -1 | awk '{print $1}')
 sudo mstconfig -d 0000:${PCI_ADDR} set  LINK_TYPE_P1=ETH LINK_TYPE_P2=ETH
 
 # Enable SR-IOV
-# If SR-IOV was not enabled in Step 4, run this instead
+# If SR-IOV was not enabled in step 2-1-4, run this instead
 # Enable SR-IOV and set the maximum number of VFs (8 is more than enough for E2E testing)
 sudo mstconfig -d 0000:${PCI_ADDR} set SRIOV_EN=1 NUM_OF_VFS=8 LINK_TYPE_P1=ETH LINK_TYPE_P2=ETH
 
@@ -565,9 +636,8 @@ sudo reboot
 
 After reboot, verify:
 - `lspci | grep -i mellanox` should show **"Ethernet controller"** (if you switched mode)
-- `cat /sys/class/net/<pf-name>/device/sriov_totalvfs` should return `8` (the NUM_OF_VFS value set in Step 5)
 
-##### Step 6: Create VFs
+##### 2-1-6. Create VFs
 
 ```bash
 # For Ethernet
@@ -585,6 +655,7 @@ cat /sys/class/net/${IFACE}/device/sriov_totalvfs
 # Create VFs (2 is sufficient for E2E testing — one per vertex Pod)
 sudo sh -c "echo 2 > /sys/class/net/${IFACE}/device/sriov_numvfs"
 
+
 # Confirm VF network interfaces exist
 ip link show | grep -E 'vf '
 
@@ -595,7 +666,7 @@ lspci | grep -i 'virtual function'
 
 Repeat on every worker node that will run gpu-direct workloads.
 
-##### Step 7: Make VF creation persistent across reboots
+##### 2-1-7. Make VF creation persistent across reboots
 
 Without persistence, VFs disappear on reboot. Create a systemd oneshot service on each worker node:
 
@@ -623,18 +694,18 @@ PF_NAME=$(ls -l /sys/class/net/ | grep "$PCI_ADDR" | grep -v 'v[0-9]' | awk '{pr
 sudo systemctl enable --now sriov-vf@${PF_NAME}.service
 ```
 
-#### 2. DRANET installation
+#### 2-2. DRANET installation
 
 DRANET scans each node's network interfaces (including the VFs created above) and publishes them as `ResourceSlice` objects via Kubernetes DRA. Without DRANET, the cluster has no way to allocate VFs to Pods.
 
-Identical to [Local Cluster > 3. DRANET installation](#3-dranet-installation). The `DynamicResourceAllocation` feature gate is enabled by the ansible playbook's `feature_gates_dra_master` role (see the previous step), so if `kubectl get resourceslice` returns nothing after installing DRANET, check that role's result rather than editing `k3d-config.yaml` — that file only applies to the Local Cluster. After installation, confirm that DRANET detected the SR-IOV VFs:
+Identical to [Local Cluster > 2-2. DRANET installation](#2-2-dranet-installation). The `DynamicResourceAllocation` feature gate is enabled by the ansible playbook's `feature_gates_dra_master` role (see the previous step), so if `kubectl get resourceslice` returns nothing after installing DRANET, check that role's result rather than editing `k3d-config.yaml` — that file only applies to the Local Cluster. After installation, confirm that DRANET detected the SR-IOV VFs:
 
 ```bash
 kubectl get resourceslice -o yaml | grep -A5 'ifName'
 # Expected: entries for your VF interface names with dra.net/type: sriov (or similar)
 ```
 
-#### 3. DeviceClass creation
+#### 2-3. DeviceClass creation
 
 A `DeviceClass` defines a CEL selector that filters which DRANET-published `ResourceSlice` devices are eligible for allocation. It must be created **after** DRANET, because the selector references attributes (e.g. `dra.net/sriov`) that only exist once DRANET has published the devices.
 
@@ -651,23 +722,23 @@ kubectl get deviceclass dranet-e2e-baremetal
 # Expected: the DeviceClass with AGE
 ```
 
-#### 4. whereabouts installation
+#### 2-4. whereabouts installation
 
-Identical to [Local Cluster > 5. whereabouts installation](#5-whereabouts-installation).
+Identical to [Local Cluster > 2-4. whereabouts installation](#2-4-whereabouts-installation).
 
-#### 5. cert-manager installation
+#### 2-5. cert-manager installation
 
-Identical to [Local Cluster > 6. cert-manager installation](#6-cert-manager-installation).
+Identical to [Local Cluster > 2-5. cert-manager installation](#2-5-cert-manager-installation).
 
-#### 6. gpu-direct-comm installation
+#### 2-6. gpu-direct-comm installation
 
 The controller reconciles `NumaNetwork` into `ResourceClaimTemplate` (using the DeviceClass), the mutating webhook injects claims into Pipeline Pods, and `webhook-whereabouts-numanetwork` calls whereabouts to assign IPs — so all upstream components (steps 1–5) must be ready first.
 
-Bare-metal nodes cannot use `k3d image import`, so images must be pushed to a registry every node can pull from. The sub-steps below replace [Local Cluster > 7. gpu-direct-comm installation](#7-gpu-direct-comm-installation).
+Bare-metal nodes cannot use `k3d image import`, so images must be pushed to a registry every node can pull from. The sub-steps below replace [Local Cluster > 2-6. gpu-direct-comm installation](#2-6-gpu-direct-comm-installation).
 
-##### 6-1. gpu-direct-comm CRD installation
+##### 2-6-1. gpu-direct-comm CRD installation
 
-Identical to [Local Cluster > 7-1. gpu-direct-comm CRD installation](#7-1-gpu-direct-comm-crd-installation):
+Identical to [Local Cluster > 2-6-1. gpu-direct-comm CRD installation](#2-6-1-gpu-direct-comm-crd-installation):
 
 ```bash
 make install
@@ -675,20 +746,30 @@ kubectl get crd numanetworks.numaflow.numaproj.io
 # Expected: the CRD with CREATED AT timestamp
 ```
 
-##### 6-2. Prepare an image registry
+##### 2-6-2. Prepare an image registry
 
-Provision (or reuse) a container registry that both your build host and every cluster node can reach — for example an internal Harbor instance. The steps below use `<registry>/<project>` as a placeholder for its address and project/repository path; substitute your own.
+Provision (or reuse) a container registry that both your build host and every cluster node can reach — for example an internal Harbor instance.
 
-##### 6-3. gpu-direct-comm controller manager deployment
+To avoid repeating the registry address on every `make` invocation, create a local config file:
 
 ```bash
+cp config/local.env.mk.template config/local.env.mk
+# Edit config/local.env.mk and set IMG / WEBHOOK_NN_IMG to your registry address
+```
+
+This file is gitignored and loaded by `make` automatically via `-include`. Once configured, you can omit the `IMG=...` argument from `make` commands below.
+
+##### 2-6-3. gpu-direct-comm controller manager deployment
+
+```bash
+# If config/local.env.mk is configured, IMG= can be omitted
 make docker-build IMG=<registry>/<project>/controller:<tag>
 make docker-push IMG=<registry>/<project>/controller:<tag>
-make deploy IMG=<registry>/<project>/controller:<tag>
+make deploy-baremetal IMG=<registry>/<project>/controller:<tag>
 kubectl -n gpu-direct-comm-system rollout status deployment/gpu-direct-comm-controller-manager --timeout=120s
 ```
 
-`make deploy` runs `kustomize edit set image controller=<IMG>` under the hood, rewriting `config/manager/kustomization.yaml` in place — this is expected and does not need to be committed.
+`make deploy-baremetal` uses the kustomize overlay at `config/overlays/baremetal/` which sets `--etcd-endpoints` to the kubeadm Service CIDR address (`10.96.200.53`). It runs `kustomize edit set image controller=<IMG>` under the hood, rewriting `config/manager/kustomization.yaml` in place — this is expected and does not need to be committed.
 
 Verify:
 
@@ -697,7 +778,7 @@ kubectl get pods -n gpu-direct-comm-system
 # Expected: gpu-direct-comm-controller-manager-... — Running, READY 1/1
 ```
 
-##### 6-4. webhook-whereabouts-numanetwork build and deployment
+##### 2-6-4. webhook-whereabouts-numanetwork build and deployment
 
 Unlike the controller manager, there is no `docker-push`/`deploy` Make target for this image, and `config/webhook-whereabouts-numanetwork/kustomization.yaml` does not yet have an `images:` transformer — `kustomize edit set image` adds one the first time you run it:
 
@@ -719,9 +800,101 @@ kubectl -n kube-system get pods -l app.kubernetes.io/name=webhook-whereabouts-nu
 # Expected: one Pod per node the DaemonSet can schedule onto — all Running, READY 1/1
 ```
 
+##### 2-6-5. DRANET BYODP webhook integration
+
+Identical to [Local Cluster > 2-6-4. DRANET BYODP webhook integration](#2-6-4-dranet-byodp-webhook-integration), with one difference: bare-metal nodes pull images from a registry instead of `k3d image import`. Confirm that the pinned DRANET image is available from a registry your nodes can reach:
+
+```bash
+# If nodes can pull from gcr.io directly:
+kubectl -n kube-system patch ds dranet --type=json -p='[
+  {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"gcr.io/k8s-staging-networking/dranet:v1.3.0-29-g1b7c7e5"},
+  {"op":"replace","path":"/spec/template/spec/dnsPolicy","value":"ClusterFirstWithHostNet"},
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--profile-provider=webhook"},
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--webhook-url=http://webhook-whereabouts-numanetwork.kube-system.svc:8443"}
+]'
+kubectl -n kube-system rollout status ds/dranet --timeout=90s
+```
+
+If nodes cannot reach `gcr.io`, mirror the image to your private registry first (`docker pull` + `docker tag` + `docker push`) and use the mirrored image reference in the patch above.
+
+> As with the Local Cluster, check whether the official DRANET release now includes BYODP before reusing this pinned tag — see [Local Cluster > 2-6-4](#2-6-4-dranet-byodp-webhook-integration) for rationale and verification steps.
+
+##### 2-6-6. CoreDNS etcd backend setup
+
+Same purpose as [Local Cluster > 2-6-5. CoreDNS etcd backend setup](#2-6-5-coredns-etcd-backend-setup) (name resolution for the `vertexdomain.local` zone), but bare-metal (kubeadm) environments differ in two ways:
+
+1. **Service CIDR**: The fixed ClusterIP (`10.43.200.53`) for the `etcd-coredns` Service targets the k3s default Service CIDR (`10.43.0.0/16`). The bare-metal overlay (`config/coredns-etcd/baremetal/patch-clusterip.yaml`) overrides it for kubeadm environments
+2. **CoreDNS configuration method**: k3s auto-imports the `coredns-custom` ConfigMap into the Corefile; kubeadm's CoreDNS does not support this. Edit the `coredns` ConfigMap's Corefile directly instead
+
+The bare-metal kustomize overlay is at `config/coredns-etcd/baremetal/` and deploys only etcd (no `coredns-custom` ConfigMap).
+
+Determine the environment's Service CIDR and adjust the patch file:
+
+```bash
+# Check the kubeadm cluster's Service CIDR
+kubectl cluster-info dump | grep -m 1 service-cluster-ip-range
+# Example: --service-cluster-ip-range=10.96.0.0/12
+```
+
+If your Service CIDR differs from the default (`10.96.0.0/12`), edit `config/coredns-etcd/baremetal/patch-clusterip.yaml` and change `10.96.200.53` to an unused IP within your CIDR.
+
+Deploy etcd:
+
+```bash
+kubectl apply -k config/coredns-etcd/baremetal/
+kubectl -n kube-system wait --for=condition=Ready pod/etcd-coredns-0 --timeout=60s
+```
+
+Append a `vertexdomain.local` server block to the CoreDNS Corefile and restart CoreDNS. Set `ETCD_CLUSTER_IP` to match the value in `patch-clusterip.yaml`:
+
+```bash
+ETCD_CLUSTER_IP="10.96.200.53"   # must match patch-clusterip.yaml
+
+COREFILE=$(kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}')
+kubectl -n kube-system create configmap coredns \
+  --from-literal="Corefile=${COREFILE}
+vertexdomain.local:53 {
+    errors
+    log
+    etcd {
+        path /skydns
+        endpoint http://${ETCD_CLUSTER_IP}:2379
+    }
+}" --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n kube-system rollout restart deployment/coredns
+kubectl -n kube-system rollout status deployment/coredns --timeout=60s
+```
+
+Verify that etcd is healthy and CoreDNS has loaded the `vertexdomain.local` zone:
+
+```bash
+# etcd health
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
+# Expected: 127.0.0.1:2379 is healthy: successfully committed proposal: took = ...
+```
+
+> As with the Local Cluster, this is a single-instance etcd with `emptyDir` storage — data is lost on Pod restart. See [Local Cluster > 2-6-5](#2-6-5-coredns-etcd-backend-setup) for design rationale.
+
 ### Verify
 
-Run the same checklist as [Local Cluster > Verify](#verify), with one substitution: skip the `kubectl config current-context` check (bare-metal clusters are not created by k3d). The whereabouts config check (`kubectl -n kube-system exec ds/whereabouts -- cat ...`) is identical — no SSH access to the nodes is needed for it.
+Run the same checklist as [Local Cluster > 3. Verify](#3-verify). The environment is auto-detected:
+
+```bash
+make verify-setup
+# or: ./hack/verify-setup.sh
+```
+
+On bare-metal, the `kubectl config current-context` check is automatically skipped.
+
+Once all checks pass, you can run the full-flow E2E test to verify the entire vertexDomain flow (M1–M6):
+
+```bash
+make test-e2e-full-baremetal
+# or: ./hack/e2e-full-flow.sh --env baremetal
+```
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md#bare-metal-cluster) for details.
 
 ---
 

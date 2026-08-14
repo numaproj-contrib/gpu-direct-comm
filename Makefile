@@ -1,3 +1,7 @@
+# Load user-local overrides (registry, image names, etc.)
+# Copy config/local.env.mk.template to config/local.env.mk and edit.
+-include config/local.env.mk
+
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 WEBHOOK_NN_IMG ?= webhook-whereabouts-numanetwork:latest
@@ -95,6 +99,18 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+.PHONY: verify-setup
+verify-setup: ## Verify that the dev environment is fully operational (auto-detects local/baremetal)
+	./hack/verify-setup.sh
+
+.PHONY: test-e2e-full-local
+test-e2e-full-local: ## Run full-flow E2E tests on local k3d cluster (dummy interfaces)
+	./hack/e2e-full-flow.sh --env local
+
+.PHONY: test-e2e-full-baremetal
+test-e2e-full-baremetal: ## Run full-flow E2E tests on baremetal cluster (SR-IOV VFs)
+	./hack/e2e-full-flow.sh --env baremetal
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	"$(GOLANGCI_LINT)" run
@@ -175,6 +191,11 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
+
+.PHONY: deploy-baremetal
+deploy-baremetal: manifests kustomize ## Deploy controller with bare-metal overlay (kubeadm etcd endpoint).
+	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	"$(KUSTOMIZE)" build config/overlays/baremetal | "$(KUBECTL)" apply -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.

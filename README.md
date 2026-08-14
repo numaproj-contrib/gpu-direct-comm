@@ -157,7 +157,9 @@ E2E tests are available for both Local (k3d) and Bare-metal clusters. See [CONTR
 
 This project is developed in three major goals (G1–G3).
 
-### G1: NumaNetwork CRD & Secondary NIC Integration
+### G1: NumaNetwork CRD & Secondary NIC Integration — Complete
+
+Automatic secondary NIC and IP address assignment for Vertex Pods at Pipeline deploy time using DRA (DRANET) and whereabouts IPAM.
 
 | Milestone | Description |
 |---|---|
@@ -166,11 +168,33 @@ This project is developed in three major goals (G1–G3).
 | M3 | Pipeline edge binding + ValidatingWebhook |
 | M4 | Pipeline ResourceClaim field injection |
 | M5 | IPAM webhook provider (webhook-whereabouts-numanetwork) |
-| M6 | E2E CI |
+| M6 | E2E test |
 
-### G2–G3
+### G2: vertexDomainController & MultiNetwork DNS — In Progress
 
-Planning in progress.
+DNS-based name resolution for secondary NIC IPs across Vertex Pods. The vertexDomainController watches Pod creation, retrieves secondary NIC IPs from ResourceClaimStatus, and registers DNS records in a dedicated etcd instance consumed by CoreDNS.
+
+| Milestone | Description | Status |
+|---|---|---|
+| M1 | vertexDomain label assignment to Vertex Pods | Complete |
+| M2 | CoreDNS etcd setup and DNS record verification | Complete |
+| M3 | vertexDomainController DNS record CRUD | Complete |
+| M4 | FQDN storage migration from Label to Annotation | Complete |
+| M5 | DNS query API for UDF containers | Complete |
+| M6 | Multi-Pod DNS round-robin per Vertex | Complete |
+| M7 | E2E test | Complete |
+
+### G3: GPU Direct RDMA Communication API — Planned
+
+RDMA-based direct GPU memory transfer between Vertex Pods, bypassing ISBSvc and CPU memory copies. Provides initialization API (DNS query + RDMA connection setup) and communication API (GPU Direct RDMA send/receive) as a Numaflow SDK extension.
+
+| Milestone | Description |
+|---|---|
+| M1 | GPUNetIO feasibility study |
+| M2 | Initialization API — RDMA connection establishment |
+| M3 | Send API — RDMA Write from GPU memory |
+| M4 | Receive API — GPU memory reception |
+| M5 | Sample UDF pipeline E2E verification |
 
 ## Using with Claude Code
 
