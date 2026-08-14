@@ -257,25 +257,7 @@ kubectl describe pod -l numaflow.numaproj.io/pipeline-name=e2e-full-flow-pipelin
 
 #### 2. ipRange から IP が割り当てられたことを検証
 
-DRA ResourceClaim の `status.devices[].networkData` に、DRANET ドライバがデバイス割当後に書き込むネットワーク情報が格納されています。この方法はベアメタルノードへの SSH アクセスや `sudo` 権限を必要としません:
-
-```bash
-for pod in $(kubectl get pods -l gpu-direct-comm.numaproj.io/vertex-domain=true,numaflow.numaproj.io/pipeline-name=e2e-full-flow-pipeline -o name); do
-  pod_name=$(echo "$pod" | sed 's|pod/||')
-  node=$(kubectl get "$pod" -o jsonpath='{.spec.nodeName}')
-  echo "=== $pod_name (node: $node) ==="
-  # resourceClaimStatuses[] — この Pod にバインドされた ResourceClaim の一覧
-  for claim in $(kubectl get "$pod" -o jsonpath='{.status.resourceClaimStatuses[*].resourceClaimName}'); do
-    echo "  Claim: $claim"
-    # devices[]          — Claim 内の各割当済みデバイス
-    # networkData.ips[]  — IPAM プロバイダ（whereabouts）が割り当てた IP アドレス
-    # networkData.interfaceName      — Pod 内の NIC 名（例: enp4s0f0v0）
-    # networkData.hardwareAddress    — NIC の MAC アドレス
-    kubectl get resourceclaim "$claim" -o jsonpath='{range .status.devices[*]}    Interface: {.networkData.interfaceName}  MAC: {.networkData.hardwareAddress}  IPs: {.networkData.ips[*]}{"\n"}{end}'
-  done
-done
-# 期待値: in と out の両方の vertex Pod で Secondary NIC に NumaNetwork.spec.refResourceClaimDranet.ipRange 内の IP が割り当てられている
-```
+[ローカルクラスタのステップ 2](#2-ipRange から IP が割り当てられたことを検証) と同じです。
 
 Secondary NIC のインターフェース名はハードウェアに依存します（例: `enp4s0f0v0`）。上記出力の `Interface` フィールドに表示されます。
 
@@ -289,18 +271,29 @@ Secondary NIC のインターフェース名はハードウェアに依存しま
 
 #### 5. Pipeline を削除しリソースが解放されることを検証
 
-[ローカルクラスタのステップ 5](#5-pipeline-を削除しリソースが解放されることを検証) と同じ手順です。testdata ファイルのみ変更してください:
+#### 5. Pipeline を削除しリソースが解放されることを検証
+
+Pipeline と NumaNetwork を削除し、DNS レコードと IP アドレスがすべてクリーンアップされることを確認します:
 
 ```bash
+# Pipeline と NumaNetwork を削除
 kubectl delete -f config/testdata/e2e_full_flow_baremetal.yaml --wait=true --timeout=60s
-```
 
-DNS レコード削除、NXDOMAIN 確認、IP pool 解放の検証はローカルクラスタと同じです。
+# DNS レコードが etcd から削除されたことを確認
+kubectl -n kube-system exec etcd-coredns-0 -- \
+  etcdctl get --prefix /skydns/local/vertexdomain/default/e2e-full-flow-pipeline/ --keys-only
+# 期待値: 出力なし（レコードがすべて削除されている）
 
-#### クリーンアップ
+# nslookup で NXDOMAIN が返ることを確認
+kubectl exec e2e-dns-test -- nslookup out.e2e-full-flow-pipeline.default.vertexdomain.local
+# 期待値: NXDOMAIN
 
-```bash
-kubectl delete pod e2e-dns-test --ignore-not-found
+# whereabouts IP pool の allocations が解放されたことを確認
+kubectl get ippools.whereabouts.cni.cncf.io -A -o jsonpath='{.items[0].spec.allocations}'
+# 期待値: 空（{}）
+
+# テスト Pod を削除
+kubectl delete pod e2e-dns-test
 ```
 
 > ローカルクラスタと同様に、これは現時点では手動のウォークスルーであり、自動化された CI ターゲットではありません。

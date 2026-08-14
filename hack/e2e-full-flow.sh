@@ -18,7 +18,7 @@ set -euo pipefail
 #   - whereabouts is installed
 #   - cert-manager is installed
 #   - gpu-direct-comm controller manager is deployed
-#   - CoreDNS etcd backend is deployed (config/coredns-etcd/)
+#   - CoreDNS etcd backend is deployed (config/coredns-etcd/local/ or baremetal/)
 #   See docs/setup-guide.ja.md for full setup instructions.
 #
 # Usage:
@@ -99,7 +99,7 @@ if kubectl -n kube-system get pod etcd-coredns-0 -o jsonpath='{.status.phase}' 2
   pass "etcd-coredns-0 is Running"
 else
   fail "etcd-coredns-0 is not Running"
-  echo "  Deploy CoreDNS etcd first: kubectl apply -k config/coredns-etcd/"
+  echo "  Deploy CoreDNS etcd first: kubectl apply -k config/coredns-etcd/local/ (or baremetal/)"
   exit 1
 fi
 

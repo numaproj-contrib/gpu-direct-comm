@@ -81,6 +81,14 @@ if [[ "${NUMAFLOW_PODS}" -ge 3 ]]; then
 else
   fail "numaflow-system: ${NUMAFLOW_PODS} pods Running (expected >= 3)"
 fi
+
+# ISBSvc
+ISBSVC_PHASE=$(kubectl get isbsvc default -o jsonpath='{.status.phase}' 2>/dev/null || true)
+if [[ "${ISBSVC_PHASE}" == "Running" ]]; then
+  pass "ISBSvc default: Running"
+else
+  fail "ISBSvc default: ${ISBSVC_PHASE:-not found} (expected: Running)"
+fi
 echo ""
 
 # 3. DRANET

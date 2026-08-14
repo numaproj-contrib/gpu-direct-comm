@@ -4,11 +4,11 @@
 
 > このドキュメントは [setup-guide.md](./setup-guide.md)（英語版）の日本語訳です。内容に差異がある場合は英語版を正としてください。
 
-## 1. ローカルクラスタ
+## ローカルクラスタ
 
 controller とその依存関係を k3d クラスタ上で動かす場合。これが標準的な開発ワークフローです。
 
-### 必要なツール
+### 0. 必要なツール
 
 - Go 1.25+
 - Docker
@@ -19,9 +19,9 @@ controller とその依存関係を k3d クラスタ上で動かす場合。こ�
 - [cert-manager](https://cert-manager.io/)
 - [whereabouts](https://github.com/k8snetworkingplumbingwg/whereabouts)
 
-### 前提環境（クラスタ + Numaflow）
+### 1. 前提環境（クラスタ + Numaflow）
 
-#### 1. k3d クラスタの作成
+#### 1-1. k3d クラスタの作成
 
 リポジトリルートの設定ファイルを使ってクラスタを作成します。
 
@@ -44,7 +44,7 @@ kubectl config current-context
 # 期待値: k3d-numaflow-cluster
 ```
 
-#### 2. Numaflow のインストール
+#### 1-2. Numaflow のインストール
 
 Numaflow は公開リリースマニフェストからインストールします。Numaflow 自体を開発する場合を除き、自分でビルドする必要はありません（ビルドする場合は下記のオプション手順を参照）。
 
@@ -79,9 +79,32 @@ kubectl get pods -n numaflow-system
 >
 > このコマンドは Numaflow のコンテナイメージをビルドし、クラスタにインストールします（この場合も `current-context` により対象は `k3d-numaflow-cluster` になります）— 上記の `kubectl apply` の代わりに使用します。Numaflow のビルド環境全体（Go、Rust、protoc 等）のセットアップについては、[Numaflow Development](https://numaflow.numaproj.io/development/development/) ドキュメントを参照してください。
 
-### gpu-direct-comm 固有のセットアップ
+#### 1-3. InterStepBufferService (ISBSvc) の作成
 
-#### 3. dummy インターフェースの作成
+Numaflow の Pipeline は、Vertex 間のメッセージバッファリングに ISBSvc を必要とします。Pipeline は `spec.interStepBufferServiceName` を省略すると `default` という名前の ISBSvc を使用します。ここで作成しておかないと、Pipeline が `isbsvc default not found` で失敗します。
+
+```bash
+kubectl apply -f config/testdata/isbsvc.yaml
+```
+
+JetStream の Pod が起動するまで待機します：
+
+```bash
+kubectl wait pod -n default -l numaflow.numaproj.io/isbsvc-name=default --for=condition=Ready --timeout=120s
+```
+
+確認：
+
+```bash
+kubectl get isbsvc
+# 期待値: default — Running
+```
+
+> これは `version: "latest"` で永続ストレージを持たない最小構成の ISBSvc です — Pod 再起動時にデータは失われます。ローカル開発にはこれで十分です。ベアメタルクラスタでは `numaflow-dra-ansible` が JetStream バージョンを固定し PersistentVolume を使用する本番向け ISBSvc をデプロイします。
+
+### 2. gpu-direct-comm 固有のセットアップ
+
+#### 2-1. dummy インターフェースの作成
 
 本番環境では SR-IOV VF（物理 NIC の仮想分割）が GPU 間直接通信用の Secondary NIC として使われます。ローカル k3d クラスタには SR-IOV ハードウェアがないため、Linux の **dummy インターフェース** を実 NIC の代役として使用します。DRANET 自身の upstream E2E テストも同じ手法を採用しています。
 
@@ -105,7 +128,7 @@ done
 
 次のステップで DRANET をインストールすると、各ノードで `dummy0` が自動検出され、Kubernetes の **ResourceSlice** オブジェクトとしてデバイスが公開されます。
 
-#### 4. DRANET のインストール
+#### 2-2. DRANET のインストール
 
 DRANET は NIC を `ResourceSlice` オブジェクトとして公開し、Pod にアタッチする DRA（Dynamic Resource Allocation）driver です。
 
@@ -130,7 +153,7 @@ options:
         nodeFilters: ["server:*", "agent:*"]
 ```
 
-#### 5. DeviceClass の作成
+#### 2-3. DeviceClass の作成
 
 `DeviceClass` は、DRANET が公開したどのデバイスが割当対象かを Kubernetes に伝えます。`NumaNetwork.spec.refDeviceClass.name` はこのオブジェクトを参照する必要があります。ローカルクラスタでは `dummy` タイプのインターフェースのみにフィルタする DeviceClass を使用します:
 
@@ -145,7 +168,7 @@ kubectl get deviceclass dranet-e2e-local
 # 期待値: AGE 付きで DeviceClass が表示される
 ```
 
-#### 6. whereabouts のインストール
+#### 2-4. whereabouts のインストール
 
 whereabouts は、`webhook-whereabouts-numanetwork` が `NumaNetwork.spec.refResourceClaimDranet.ipRange` から IP を割り当てるために exec する CNI IPAM プラグインです。その DaemonSet はノードごとに flat な設定ファイル（`/etc/cni/net.d/whereabouts.d/whereabouts.conf`。IPPool CRD と通信するための kubeconfig を含む）も生成し、`webhook-whereabouts-numanetwork` はこれに依存します — webhook をデプロイする前にインストールしてください。
 
@@ -161,7 +184,7 @@ kubectl -n kube-system exec ds/whereabouts -- cat /host/etc/cni/net.d/whereabout
 # 期待値: "kubeconfig" フィールドを含む JSON
 ```
 
-#### 7. cert-manager のインストール
+#### 2-5. cert-manager のインストール
 
 gpu-direct-comm の controller manager の webhook（`internal/webhook/v1alpha1`）は cert-manager が管理する TLS 証明書を必要とします（`config/default/kustomization.yaml` は `../certmanager` を含む）。
 
@@ -177,11 +200,11 @@ kubectl get pods -n cert-manager
 # 期待値: cert-manager, cert-manager-cainjector, cert-manager-webhook — すべて Running
 ```
 
-#### 8. gpu-direct-comm のインストール
+#### 2-6. gpu-direct-comm のインストール
 
 以下の 3 つのサブステップは、本リポジトリのソースコードからビルドしたコンポーネントをインストールします。
 
-##### 8-1. gpu-direct-comm CRD のインストール
+##### 2-6-1. gpu-direct-comm CRD のインストール
 
 ```bash
 make install
@@ -196,7 +219,7 @@ kubectl get crd numanetworks.numaflow.numaproj.io
 # 期待値: CREATED AT タイムスタンプ付きで CRD が表示される
 ```
 
-##### 8-2. gpu-direct-comm controller manager のデプロイ
+##### 2-6-2. gpu-direct-comm controller manager のデプロイ
 
 ```bash
 make docker-build IMG=controller:latest
@@ -212,7 +235,7 @@ kubectl get pods -n gpu-direct-comm-system
 # 期待値: gpu-direct-comm-controller-manager-... — Running, READY 1/1
 ```
 
-##### 8-3. webhook-whereabouts-numanetwork のビルドとデプロイ
+##### 2-6-3. webhook-whereabouts-numanetwork のビルドとデプロイ
 
 `webhook-whereabouts-numanetwork` は本リポジトリに実装された dranet BYODP（Bring Your Own DRANET Provider）用のカスタム webhook です（`cmd/webhook-whereabouts-numanetwork`、`internal/ipam`）。`NumaNetwork` の `ipRange` を解決し、`whereabouts` を exec して IP を割り当てます。
 
@@ -231,7 +254,7 @@ kubectl -n kube-system get pods -l app=webhook-whereabouts-numanetwork
 # 期待値: ノードごとに 1 Pod — すべて Running, READY 1/1
 ```
 
-##### 8-4. DRANET の BYODP webhook 連携設定
+##### 2-6-4. DRANET の BYODP webhook 連携設定
 
 このステップでは DRANET が IPAM を `webhook-whereabouts-numanetwork`（本プロジェクトで構築した webhook）に委譲するよう設定します。パッチは 3 種類の変更を行います:
 
@@ -260,7 +283,7 @@ kubectl -n kube-system rollout status ds/dranet --timeout=90s
 
 > dranet は `--webhook-url` の `/health` エンドポイントに起動時に到達できない場合、即座にクラッシュします（`Fatal`）。このため、このステップの*前に* `webhook-whereabouts-numanetwork` がデプロイ済みで `READY` でなければなりません — dranet を先に webhook モードに切り替え、その後に webhook をデプロイすると、crash-loop になります。
 
-##### 8-5. CoreDNS etcd バックエンドのセットアップ
+##### 2-6-5. CoreDNS etcd バックエンドのセットアップ
 
 CoreDNS の [etcd プラグイン](https://coredns.io/plugins/etcd/) を使用して、`vertexdomain.local` ゾーンの名前解決を提供します。このステップでは以下の 2 つをデプロイします：
 
@@ -272,7 +295,7 @@ CoreDNS の [etcd プラグイン](https://coredns.io/plugins/etcd/) を使用�
 kustomize で etcd と CoreDNS 設定をまとめてデプロイします：
 
 ```bash
-kubectl apply -k config/coredns-etcd/
+kubectl apply -k config/coredns-etcd/local/
 kubectl -n kube-system wait --for=condition=Ready pod/etcd-coredns-0 --timeout=60s
 ```
 
@@ -303,9 +326,9 @@ kubectl delete pod dns-check --ignore-not-found
 
 > これは `emptyDir` ストレージを使用する単一インスタンスの etcd です — Pod 再起動時にデータは失われます。開発段階ではこれで問題ありません：vertexDomainManager は Pod の状態を reconcile し、起動時に DNS レコードを再作成します。本番環境向けの HA 構成は MVP のスコープ外です。
 
-> **Service CIDR に関する注意**: `etcd-coredns` Service には固定 ClusterIP（`10.43.200.53`）を設定しています。CoreDNS は `dnsPolicy: Default`（ノード DNS）で動作するため、クラスタ内 Service 名では etcd に接続できず、IP アドレスを直接指定する必要があるためです。k3s のデフォルト Service CIDR（`10.43.0.0/16`）以外の環境では、`etcd-standalone.yaml` の `clusterIP` と `coredns-custom-configmap.yaml` の `endpoint` を合わせて変更してください。
+> **Service CIDR に関する注意**: `etcd-coredns` Service には固定 ClusterIP（`10.43.200.53`）を設定しています。CoreDNS は `dnsPolicy: Default`（ノード DNS）で動作するため、クラスタ内 Service 名では etcd に接続できず、IP アドレスを直接指定する必要があるためです。ローカルクラスタ（k3s）は `config/coredns-etcd/local/` を使用し、このデフォルト値がそのまま適用されます。ベアメタルクラスタ（kubeadm）は `config/coredns-etcd/baremetal/` を使用し、`patch-clusterip.yaml` で環境の Service CIDR に合わせた ClusterIP に差し替えます。
 
-### 確認
+### 3. 確認
 
 全チェックを一括実行して、環境が完全に動作していることを確認します:
 
@@ -324,6 +347,10 @@ kubectl config current-context
 # Numaflow コンポーネント
 kubectl get pods -n numaflow-system
 # 期待値: numaflow-controller, numaflow-server, numaflow-dex-server — すべて Running（オプションの validating webhook を入れた場合は numaflow-webhook も）
+
+# ISBSvc
+kubectl get isbsvc
+# 期待値: default — Running
 
 # DRANET デバイス
 kubectl get resourceslice
@@ -377,19 +404,20 @@ make test-e2e-full-local
 
 ---
 
-## 2. ベアメタルクラスタ
+## ベアメタルクラスタ
 
 実 NVIDIA GPU および SR-IOV VF ハードウェアを使用するマルチノードベアメタルクラスタで controller を動かす場合。
 
-### ハードウェア前提条件
+### 0. 前提条件
+#### 0-1. ハードウェア前提条件
 
 各ワーカーノードには以下のハードウェアが搭載されている必要があります。
 
-#### GPU
+##### 0-1-1. GPU
 
 - NVIDIA GPU（DRA driver 対応のもの — `numaflow-dra-ansible` の `dra-driver-nvidia-gpu` ロールでセットアップ）
 
-#### d-plane NIC
+##### 0-1-2. d-plane NIC
 
 データプレーン（d-plane）には、以下の要件を満たす NIC が各ワーカーノードに接続されている必要があります。
 
@@ -403,12 +431,12 @@ make test-e2e-full-local
 
 | ベンダー | NIC | ドライバ | RDMA プロトコル | 備考 |
 |---------|-----|---------|---------------|------|
-| NVIDIA/Mellanox | ConnectX-6 以降 | `mlx5_core`（OFED） | RoCE v2（Ethernet 接続時）/ ネイティブ IB RDMA（InfiniBand 接続時） | GPUDirect RDMA の検証実績あり。VPI カードはポートモードの切り替えが必要な場合あり（[ステップ 2: ポートモードの確認と切り替え](#ステップ-2-ポートモードの確認と切り替え) 参照） |
+| NVIDIA/Mellanox | ConnectX-6 以降 | `mlx5_core`（OFED） | RoCE v2（Ethernet 接続時）/ ネイティブ IB RDMA（InfiniBand 接続時） | GPUDirect RDMA の検証実績あり。VPI カードはポートモードの切り替えが必要な場合あり（[2-1-2. ポートモードの確認](#2-1-2-ポートモードの確認) 参照） |
 | Intel | E810 | `ice` + `irdma` | RoCE v2 | GPUDirect RDMA の対応は限定的 |
 
-> ポートモードはスイッチの種類と一致させる必要があります（Ethernet スイッチ → Ethernet モード / RoCE v2、InfiniBand スイッチ → InfiniBand モード / ネイティブ IB RDMA）。詳細は [ステップ 2: ポートモードの確認と切り替え](#ステップ-2-ポートモードの確認と切り替え) を参照してください。
+> ポートモードはスイッチの種類と一致させる必要があります（Ethernet スイッチ → Ethernet モード / RoCE v2、InfiniBand スイッチ → InfiniBand モード / ネイティブ IB RDMA）。詳細は [2-1-2. ポートモードの確認](#2-1-2-ポートモードの確認) を参照してください。
 
-### 必要なツール
+#### 0-2. 必要なツール
 
 - Ansible control node（`ansible-core` >= 2.16）— [numaflow-dra-ansible](https://github.com/compsysg/numaflow-dra-ansible) の実行に使用
 - 各管理対象ノードへの SSH アクセス
@@ -417,7 +445,7 @@ make test-e2e-full-local
 - 全クラスタノードから到達可能なコンテナレジストリ（ベアメタルでは `k3d image import` が使えないため）
 - [DRANET](https://github.com/kubernetes-sigs/dranet)、[cert-manager](https://cert-manager.io/)、[whereabouts](https://github.com/k8snetworkingplumbingwg/whereabouts) — 以下の gpu-direct-comm 固有のセットアップ手順でインストールする（ansible playbookではインストールされない）
 
-### 前提環境（クラスタ・GPU・DRA・Numaflow）
+### 1. 前提環境（クラスタ・GPU・DRA・Numaflow）
 
 クラスタ構築、NVIDIA GPU ドライバ／ツールキット、GPU 用 DRA driver の有効化、Numaflow のインストールは [numaflow-dra-ansible](https://github.com/compsysg/numaflow-dra-ansible)（本ワークスペースでは `~/project/numaflow-dra-ansible`）に一任します。まず同リポジトリの README に従って inventory（`inventory/stg.yml`。`inventory/inventory.yml.template` からコピー）を設定し、その上でルート playbook を実行してください。
 
@@ -432,7 +460,7 @@ ansible-playbook -i inventory/stg.yml -e @vars-stg.yml site-stg-dci-poc.yml
 2. kubeadm + Calico CNI による Kubernetes クラスタ構築（`playbooks/kubernetes-cluster.yml`）
 3. NVIDIA GPU ドライバ + コンテナツールキット（`playbooks/nvidia-gpu-support.yml`）
 4. DRA feature gate + NVIDIA GPU 用 DRA driver（`playbooks/dra-driver-nvidia-gpu.yml`）
-5. Numaflow（`playbooks/numaflow.yml`）
+5. Numaflow（`playbooks/numaflow.yml`）— `numaflow_install` ロールは `local-static-provisioner`、PersistentVolume（`pv-isbsvc1/2/3`）、および **ISBSvc**（`default`）もデプロイします。ローカルクラスタのエフェメラルな ISBSvc と異なり、JetStream バージョンを固定し PersistentVolume による永続ストレージを使用します
 6. Numaflow 向け Prometheus 監視（`playbooks/monitor.yml`）
 
 > この playbook は DRANET・whereabouts・gpu-direct-comm のコンポーネントを**インストールしません**。これらは次のセクションで、ローカルクラスタと同じ手順でセットアップします。
@@ -457,12 +485,16 @@ kubectl get pods -n nvidia-dra-driver-gpu
 kubectl get pods -n numaflow-system
 # 期待値: numaflow-controller, numaflow-server, numaflow-dex-server — すべて Running
 
+# ISBSvc（numaflow_install ロールでデプロイ済み）
+kubectl get isbsvc
+# 期待値: default — Running
+
 # Prometheus 監視
 kubectl get pods -n monitoring
 # 期待値: prometheus-k8s, prometheus-operator 等 — すべて Running
 ```
 
-> ローカルクラスタのデフォルトのYAMLインストールと同様、ここでも `numaflow-webhook` は**期待値に含まれません**。`numaflow-dra-ansible`の`numaflow_install`ロールが適用するのは、ローカルクラスタがデフォルトで使うのと同じ`config/install.yaml`ベースマニフェストであり（[ローカルクラスタ > Numaflow のインストール](#numaflow-のインストール)の注記を参照）、これには含まれません。これはオプション機能で、gpu-direct-comm自身のwebhookはこれに依存しませんが、ベアメタルでも確認したい場合は、ansible playbookがインストールしたのと同じNumaflowバージョン（`vars-stg.yml`の`numaflow_install.numaflow_version`を参照）に合わせて手動インストールしてください。
+> ローカルクラスタのデフォルトのYAMLインストールと同様、ここでも `numaflow-webhook` は**期待値に含まれません**。`numaflow-dra-ansible`の`numaflow_install`ロールが適用するのは、ローカルクラスタがデフォルトで使うのと同じ`config/install.yaml`ベースマニフェストであり（[ローカルクラスタ > 1-2. Numaflow のインストール](#1-2-numaflow-のインストール)の注記を参照）、これには含まれません。これはオプション機能で、gpu-direct-comm自身のwebhookはこれに依存しませんが、ベアメタルでも確認したい場合は、ansible playbookがインストールしたのと同じNumaflowバージョン（`vars-stg.yml`の`numaflow_install.numaflow_version`を参照）に合わせて手動インストールしてください。
 >
 > ```bash
 > kubectl apply -n numaflow-system -f https://raw.githubusercontent.com/numaproj/numaflow/<numaflow_version>/config/validating-webhook-install.yaml
@@ -470,9 +502,9 @@ kubectl get pods -n monitoring
 > # 期待値: numaflow-webhook — Running
 > ```
 
-### gpu-direct-comm 固有のセットアップ
+### 2. gpu-direct-comm 固有のセットアップ
 
-DRANET、`dranet` DeviceClass、whereabouts、cert-manager、および gpu-direct-comm 自身のコンポーネント（CRD、controller manager、`webhook-whereabouts-numanetwork`）は `numaflow-dra-ansible` に**含まれません**。以下の置き換えを除き、[ローカルクラスタ](#1-ローカルクラスタ)と同じ手順でインストールします。
+DRANET、`dranet` DeviceClass、whereabouts、cert-manager、および gpu-direct-comm 自身のコンポーネント（CRD、controller manager、`webhook-whereabouts-numanetwork`）は `numaflow-dra-ansible` に**含まれません**。以下の置き換えを除き、[ローカルクラスタ](#ローカルクラスタ)と同じ手順でインストールします。
 
 インストール順序はコンポーネント間の依存関係に基づいています。各コンポーネントは前段のコンポーネントに依存します。
 
@@ -487,13 +519,13 @@ DRANET、`dranet` DeviceClass、whereabouts、cert-manager、および gpu-direc
 
 > ステップ 4 と 5 はステップ 1〜3 に対する依存がなく、相互に任意の順序でインストールできますが、ステップ 6 の前に完了している必要があります。
 
-#### 1. SR-IOV VF の準備
+#### 2-1. SR-IOV VF の準備
 
 DRANET のインストール**前に**、各ワーカーノードの RDMA 対応 NIC 上に SR-IOV Virtual Function（VF）が存在している必要があります。DRANET の DaemonSet は起動時にノードのインターフェースをスキャンするため、VF がまだ存在しなければ `ResourceSlice` エントリとして表示されません。
 
 > VF の作成はノードごとに一度だけ行えば十分です（systemd で永続化すれば再起動後も維持されます — 下記参照）。以前のセットアップで既に VF が存在する場合は、[VF が認識されていることの確認](#vf-が認識されていることの確認) までスキップしてください。
 
-##### ステップ 1: RDMA 対応 NIC が認識されていることを確認する
+##### 2-1-1. RDMA 対応 NIC が認識されていることを確認する
 
 ワーカーノードに SSH でログインし、Mellanox/NVIDIA NIC が PCI バス上で認識されていることを確認します：
 
@@ -506,7 +538,7 @@ lspci | grep -i mellanox
 
 出力がない場合、NIC が物理的に装着されていないか、ドライバがロードされていない可能性があります。
 
-##### ステップ 2: ポートモードの確認
+##### 2-1-2. ポートモードの確認
 
 ConnectX VPI カードのポートはデフォルトで **InfiniBand モード** になっています。必要なモードは NIC が接続されているケーブルやスイッチの種類によって決まります：
 
@@ -530,7 +562,7 @@ sudo mstconfig -d 0000:${PCI_ADDR} query | grep LINK_TYPE
 
 得られたポートモードが想定のもの通りであるかを確認してください．そうでない場合は後ほど変更します．
 
-##### ステップ 3: リンク状態の確認
+##### 2-1-3. リンク状態の確認
 
 **どの物理ポートにケーブルが接続されているかを確認します。** デュアルポートカードは 2 つの独立した PF を持ちます — リンクのあるポートのみを VF 作成に使用します。
 
@@ -568,7 +600,7 @@ done
 
 リンクがあった方のポートのインタフェース名を覚えてください — 後の VF 作成状況の確認と作成で使用します。
 
-##### ステップ 4: VF の作成状況の確認
+##### 2-1-4. VF の作成状況の確認
 
 ```bash
 IFACE="<your-pf-name>"   # 例: enp4s0f0np0（Ethernet）または ib0（InfiniBand）
@@ -580,7 +612,7 @@ cat /sys/class/net/${IFACE}/device/sriov_totalvfs
 
 ここでsriov_totalvfsがない場合は，ファームウェアレベルでSR-IOVが有効になっていないので，次ステップで有効化してください．
 
-##### ステップ 5: ポートモードの変更 と VFの有効化
+##### 2-1-5. ポートモードの変更 と VFの有効化
 
 **ファームウェア設定の適用。** ポートモードの切り替えと SR-IOV の有効化はどちらもファームウェアレベルの設定でリブートが必要なため、一括で実行します
 
@@ -606,7 +638,7 @@ sudo reboot
 リブート後の確認：
 - `lspci | grep -i mellanox` で **"Ethernet controller"** と表示されること（モードを切り替えた場合）
 
-##### ステップ 6: VFの作成
+##### 2-1-6. VFの作成
 
 ```bash
 # Ethernetの場合
@@ -636,7 +668,7 @@ lspci | grep -i 'virtual function'
 
 gpu-direct ワークロードを実行するすべてのワーカーノードで同じ操作を繰り返してください。
 
-##### ステップ 7: VF 作成の再起動後の永続化
+##### 2-1-7. VF 作成の再起動後の永続化
 
 永続化しないと、再起動時に VF は消えます。各ワーカーノードで systemd の oneshot サービスを作成してください：
 
@@ -664,18 +696,18 @@ PF_NAME=$(ls -l /sys/class/net/ | grep "$PCI_ADDR" | grep -v 'v[0-9]' | awk '{pr
 sudo systemctl enable --now sriov-vf@${PF_NAME}.service
 ```
 
-#### 2. DRANET のインストール
+#### 2-2. DRANET のインストール
 
 DRANET は各ノードのネットワークインターフェース（上で作成した VF を含む）をスキャンし、Kubernetes DRA 経由で `ResourceSlice` オブジェクトとして公開します。DRANET がなければ、クラスタは VF を Pod に割り当てる手段がありません。
 
-[ローカルクラスタ > 3. DRANET のインストール](#3-dranet-のインストール) と同一です。`DynamicResourceAllocation` feature gate は前段の ansible playbook（`feature_gates_dra_master` ロール）が有効化するため、DRANET インストール後に `kubectl get resourceslice` が空の場合は `k3d-config.yaml` の編集ではなく、そのロールの実行結果を確認してください（`k3d-config.yaml` はローカルクラスタにのみ適用されます）。インストール後、SR-IOV VF が DRANET に認識されていることを確認してください。
+[ローカルクラスタ > 2-2. DRANET のインストール](#2-2-dranet-のインストール) と同一です。`DynamicResourceAllocation` feature gate は前段の ansible playbook（`feature_gates_dra_master` ロール）が有効化するため、DRANET インストール後に `kubectl get resourceslice` が空の場合は `k3d-config.yaml` の編集ではなく、そのロールの実行結果を確認してください（`k3d-config.yaml` はローカルクラスタにのみ適用されます）。インストール後、SR-IOV VF が DRANET に認識されていることを確認してください。
 
 ```bash
 kubectl get resourceslice -o yaml | grep -A5 'ifName'
 # 期待値: VF のインターフェース名に対応するエントリが dra.net/type: sriov（または類似の値）とともに表示される
 ```
 
-#### 3. DeviceClass の作成
+#### 2-3. DeviceClass の作成
 
 `DeviceClass` は、DRANET が公開した `ResourceSlice` デバイスのうちどれが割当対象かをフィルタする CEL セレクタを定義します。DRANET の**後に**作成する必要があります。セレクタが参照する属性（例: `dra.net/sriov`）は、DRANET がデバイスを公開して初めて存在するためです。
 
@@ -692,23 +724,23 @@ kubectl get deviceclass dranet-e2e-baremetal
 # 期待値: AGE 付きで DeviceClass が表示される
 ```
 
-#### 4. whereabouts のインストール
+#### 2-4. whereabouts のインストール
 
-[ローカルクラスタ > 5. whereabouts のインストール](#5-whereabouts-のインストール) と同一です。
+[ローカルクラスタ > 2-4. whereabouts のインストール](#2-4-whereabouts-のインストール) と同一です。
 
-#### 5. cert-manager のインストール
+#### 2-5. cert-manager のインストール
 
-[ローカルクラスタ > 6. cert-manager のインストール](#6-cert-manager-のインストール) と同一です。
+[ローカルクラスタ > 2-5. cert-manager のインストール](#2-5-cert-manager-のインストール) と同一です。
 
-#### 6. gpu-direct-comm のインストール
+#### 2-6. gpu-direct-comm のインストール
 
 controller は `NumaNetwork` を `ResourceClaimTemplate`（DeviceClass を使用）に reconcile し、mutating webhook が Pipeline Pod にクレームを注入し、`webhook-whereabouts-numanetwork` が whereabouts を呼び出して IP を割り当てます。そのため、上流のコンポーネント（ステップ 1〜5）がすべて準備済みである必要があります。
 
-ベアメタルノードは `k3d image import` が使えないため、イメージは各ノードが pull できるレジストリへ push する必要があります。以下のサブステップが [ローカルクラスタ > 7. gpu-direct-comm のインストール](#7-gpu-direct-comm-のインストール) の置き換えです。
+ベアメタルノードは `k3d image import` が使えないため、イメージは各ノードが pull できるレジストリへ push する必要があります。以下のサブステップが [ローカルクラスタ > 2-6. gpu-direct-comm のインストール](#2-6-gpu-direct-comm-のインストール) の置き換えです。
 
-##### 6-1. gpu-direct-comm CRD のインストール
+##### 2-6-1. gpu-direct-comm CRD のインストール
 
-[ローカルクラスタ > 7-1. gpu-direct-comm CRD のインストール](#7-1-gpu-direct-comm-crd-のインストール) と同一です。
+[ローカルクラスタ > 2-6-1. gpu-direct-comm CRD のインストール](#2-6-1-gpu-direct-comm-crd-のインストール) と同一です。
 
 ```bash
 make install
@@ -716,20 +748,20 @@ kubectl get crd numanetworks.numaflow.numaproj.io
 # 期待値: CREATED AT タイムスタンプ付きで CRD が表示される
 ```
 
-##### 6-2. イメージ用レジストリの準備
+##### 2-6-2. イメージ用レジストリの準備
 
 ビルドを行うホストと、クラスタの全ノードの両方から到達可能なコンテナレジストリを用意（または既存のものを利用）してください（例: 社内Harbor等）。以下では、そのアドレスと project/repository パスを `<registry>/<project>` というプレースホルダーで表記します。実際の値に置き換えてください。
 
-##### 6-3. gpu-direct-comm controller manager のデプロイ
+##### 2-6-3. gpu-direct-comm controller manager のデプロイ
 
 ```bash
 make docker-build IMG=<registry>/<project>/controller:<tag>
 make docker-push IMG=<registry>/<project>/controller:<tag>
-make deploy IMG=<registry>/<project>/controller:<tag>
+make deploy-baremetal IMG=<registry>/<project>/controller:<tag>
 kubectl -n gpu-direct-comm-system rollout status deployment/gpu-direct-comm-controller-manager --timeout=120s
 ```
 
-`make deploy` は内部で `kustomize edit set image controller=<IMG>` を実行し、`config/manager/kustomization.yaml` をその場で書き換えます。これは想定通りの動作で、コミットする必要はありません。
+`make deploy-baremetal` は `config/overlays/baremetal/` の kustomize オーバーレイを使用し、`--etcd-endpoints` を kubeadm の Service CIDR アドレス（`10.96.200.53`）に設定します。内部で `kustomize edit set image controller=<IMG>` を実行し、`config/manager/kustomization.yaml` をその場で書き換えます。これは想定通りの動作で、コミットする必要はありません。
 
 確認:
 
@@ -738,7 +770,7 @@ kubectl get pods -n gpu-direct-comm-system
 # 期待値: gpu-direct-comm-controller-manager-... — Running, READY 1/1
 ```
 
-##### 6-4. webhook-whereabouts-numanetwork のビルドとデプロイ
+##### 2-6-4. webhook-whereabouts-numanetwork のビルドとデプロイ
 
 controller manager と異なり、このイメージには `docker-push`/`deploy` に相当する Make ターゲットがなく、また `config/webhook-whereabouts-numanetwork/kustomization.yaml` にはまだ `images:` トランスフォーマーが設定されていません — `kustomize edit set image` を初めて実行した際にこれが追加されます。
 
@@ -760,9 +792,9 @@ kubectl -n kube-system get pods -l app.kubernetes.io/name=webhook-whereabouts-nu
 # 期待値: DaemonSet がスケジュール可能な各ノードに1つずつ Pod — すべて Running, READY 1/1
 ```
 
-##### 6-5. DRANET の BYODP webhook 連携設定
+##### 2-6-5. DRANET の BYODP webhook 連携設定
 
-[ローカルクラスタ > 8-4. DRANET の BYODP webhook 連携設定](#8-4-dranet-の-byodp-webhook-連携設定) と同じですが、1点異なります: ベアメタルノードは `k3d image import` ではなくレジストリからイメージを pull します。固定された DRANET イメージがノードからアクセス可能なレジストリに存在することを確認してください:
+[ローカルクラスタ > 2-6-4. DRANET の BYODP webhook 連携設定](#2-6-4-dranet-の-byodp-webhook-連携設定) と同じですが、1点異なります: ベアメタルノードは `k3d image import` ではなくレジストリからイメージを pull します。固定された DRANET イメージがノードからアクセス可能なレジストリに存在することを確認してください:
 
 ```bash
 # ノードが gcr.io から直接 pull できる場合:
@@ -777,11 +809,68 @@ kubectl -n kube-system rollout status ds/dranet --timeout=90s
 
 ノードが `gcr.io` に到達できない場合は、まずイメージをプライベートレジストリにミラーリングし（`docker pull` + `docker tag` + `docker push`）、上記のパッチでミラーリングしたイメージリファレンスを使用してください。
 
-> ローカルクラスタと同様に、この固定タグを再利用する前に、公式 DRANET リリースに BYODP が含まれたか確認してください — 根拠と確認方法は[ローカルクラスタ > 8-4](#8-4-dranet-の-byodp-webhook-連携設定) を参照してください。
+> ローカルクラスタと同様に、この固定タグを再利用する前に、公式 DRANET リリースに BYODP が含まれたか確認してください — 根拠と確認方法は[ローカルクラスタ > 2-6-4](#2-6-4-dranet-の-byodp-webhook-連携設定) を参照してください。
+
+##### 2-6-6. CoreDNS etcd バックエンドのセットアップ
+
+[ローカルクラスタ > 2-6-5. CoreDNS etcd バックエンドのセットアップ](#2-6-5-coredns-etcd-バックエンドのセットアップ) と同じ目的（`vertexdomain.local` ゾーンの名前解決）ですが、ベアメタル（kubeadm）環境では 2 点異なります：
+
+1. **Service CIDR**: `etcd-coredns` Service の固定 ClusterIP（`10.43.200.53`）は k3s のデフォルト Service CIDR（`10.43.0.0/16`）向けです。kubeadm 環境の Service CIDR が異なる場合、`config/coredns-etcd/baremetal/patch-clusterip.yaml` で差し替えます
+2. **CoreDNS 設定方法**: k3s は `coredns-custom` ConfigMap を Corefile に自動インポートしますが、kubeadm の CoreDNS はこの機能を持ちません。`coredns` ConfigMap の Corefile を直接編集します
+
+ベアメタル用の kustomize overlay は `config/coredns-etcd/baremetal/` にあり、etcd のみをデプロイします（`coredns-custom` ConfigMap は含みません）。
+
+環境の Service CIDR を確認し、patch ファイルの ClusterIP を合わせます：
+
+```bash
+# kubeadm クラスタの Service CIDR を確認
+kubectl cluster-info dump | grep -m 1 service-cluster-ip-range
+# 例: --service-cluster-ip-range=10.96.0.0/12
+```
+
+Service CIDR がデフォルト（`10.96.0.0/12`）と異なる場合、`config/coredns-etcd/baremetal/patch-clusterip.yaml` の `10.96.200.53` を環境の CIDR 内の空き IP に変更してください。
+
+etcd をデプロイします：
+
+```bash
+kubectl apply -k config/coredns-etcd/baremetal/
+kubectl -n kube-system wait --for=condition=Ready pod/etcd-coredns-0 --timeout=60s
+```
+
+CoreDNS の Corefile に `vertexdomain.local` ゾーンのサーバブロックを追記し、CoreDNS を再起動します。`ETCD_CLUSTER_IP` は `patch-clusterip.yaml` に設定した ClusterIP に合わせてください：
+
+```bash
+ETCD_CLUSTER_IP="10.96.200.53"   # patch-clusterip.yaml と同じ値
+
+COREFILE=$(kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}')
+kubectl -n kube-system create configmap coredns \
+  --from-literal="Corefile=${COREFILE}
+vertexdomain.local:53 {
+    errors
+    log
+    etcd {
+        path /skydns
+        endpoint http://${ETCD_CLUSTER_IP}:2379
+    }
+}" --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n kube-system rollout restart deployment/coredns
+kubectl -n kube-system rollout status deployment/coredns --timeout=60s
+```
+
+etcd が正常であること、CoreDNS が `vertexdomain.local` ゾーンを認識していることを確認します：
+
+```bash
+# etcd の正常性を確認
+kubectl -n kube-system exec etcd-coredns-0 -- etcdctl endpoint health
+# 期待値: 127.0.0.1:2379 is healthy: successfully committed proposal: took = ...
+```
+
+> ローカルクラスタと同様に、`emptyDir` ストレージを使用する単一インスタンスの etcd です — Pod 再起動時にデータは失われます。設計背景の詳細は[ローカルクラスタ > 2-6-5](#2-6-5-coredns-etcd-バックエンドのセットアップ) を参照してください。
 
 ### 確認
 
-[ローカルクラスタ > 確認](#確認) と同じスクリプトを実行します。環境は自動判定されます:
+[ローカルクラスタ > 3. 確認](#3-確認) と同じスクリプトを実行します。環境は自動判定されます:
 
 ```bash
 make verify-setup

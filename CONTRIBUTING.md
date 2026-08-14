@@ -355,29 +355,9 @@ kubectl describe pod -l numaflow.numaproj.io/pipeline-name=e2e-gpu-direct-pipeli
 
 #### 3. Verify the IP was assigned from ipRange
 
-The DRA ResourceClaim `status.devices[].networkData` contains the network information
-populated by the DRANET driver after device allocation. This approach does not require
-SSH access or `sudo` privileges on the bare-metal nodes:
+Same as [Local Cluster step 5](#5-verify-the-ip-was-assigned-from-iprange).
 
-```bash
-for pod in $(kubectl get pods -l numaflow.numaproj.io/pipeline-name=e2e-gpu-direct-pipeline -o name | grep -E 'in-|out-'); do
-  pod_name=$(echo "$pod" | sed 's|pod/||')
-  node=$(kubectl get "$pod" -o jsonpath='{.spec.nodeName}')
-  echo "=== $pod_name (node: $node) ==="
-  # resourceClaimStatuses[] — list of ResourceClaims bound to this Pod
-  for claim in $(kubectl get "$pod" -o jsonpath='{.status.resourceClaimStatuses[*].resourceClaimName}'); do
-    echo "  Claim: $claim"
-    # devices[]          — each allocated device in the claim
-    # networkData.ips[]  — IP addresses assigned by the IPAM provider (whereabouts)
-    # networkData.interfaceName      — NIC name inside the Pod (e.g. enp4s0f0v0)
-    # networkData.hardwareAddress    — MAC address of the NIC
-    kubectl get resourceclaim "$claim" -o jsonpath='{range .status.devices[*]}    Interface: {.networkData.interfaceName}  MAC: {.networkData.hardwareAddress}  IPs: {.networkData.ips[*]}{"\n"}{end}'
-  done
-done
-# Expect an IP inside NumaNetwork.spec.refResourceClaimDranet.ipRange on the Secondary NIC of both in and out vertex Pods
-```
-
-The Secondary NIC interface name depends on your hardware (e.g. `enp4s0f0v0`). It is shown in the `Interface` field of the output above.
+The Secondary NIC interface name depends on your hardware (e.g. `enp4s0f0v0`). It is shown in the `Interface` field of the output.
 
 #### 4. Verify IPs are released on Pipeline deletion
 

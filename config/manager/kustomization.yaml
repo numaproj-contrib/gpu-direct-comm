@@ -4,5 +4,5 @@ resources:
 - manager.yaml
 images:
 - name: controller
-  newName: controller
+  newName: 192.168.21.17:30003/gpu-direct-comm/controller
   newTag: latest
