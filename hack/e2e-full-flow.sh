@@ -56,6 +56,10 @@ NN_NAME="e2e-full-flow-nn"
 TEST_POD="e2e-full-flow-dns-test"
 TESTDATA_FILE="config/testdata/e2e_full_flow_${ENV}.yaml"
 
+# Derive the whereabouts IPPool name from testdata ipRange (e.g. "192.168.140.0/24" → "192.168.140.0-24")
+IP_RANGE=$(grep 'ipRange:' "${TESTDATA_FILE}" | head -1 | sed 's/.*ipRange:[[:space:]]*"\(.*\)"/\1/')
+IPPOOL_NAME="${IP_RANGE//\//-}"
+
 # vertexDomain FQDN format: <vertex>.<pipeline>.<namespace>.vertexdomain.local
 # Only the destination (To-side) FQDN is resolved in direct communication.
 FQDN_OUT="out.${PIPELINE_NAME}.default.vertexdomain.local"
@@ -66,8 +70,8 @@ ANNOTATION_KEY="gpu-direct-comm.numaproj.io/vertex-domain-fqdn"
 PASS_COUNT=0
 FAIL_COUNT=0
 
-pass() { echo "  OK: $1"; PASS_COUNT=$((PASS_COUNT + 1)); }
-fail() { echo "  FAIL: $1"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
+pass() { echo "  ✅ $1"; PASS_COUNT=$((PASS_COUNT + 1)); }
+fail() { echo "  ❌ $1"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
 
 # --- Cleanup ------------------------------------------------------------------
 
@@ -287,12 +291,12 @@ else
 fi
 
 # Verify IP addresses are released from whereabouts IP pool
-ALLOCATIONS=$(kubectl get ippools.whereabouts.cni.cncf.io -A \
-  -o jsonpath='{.items[0].spec.allocations}' 2>/dev/null || true)
+ALLOCATIONS=$(kubectl get ippools.whereabouts.cni.cncf.io -n kube-system "${IPPOOL_NAME}" \
+  -o jsonpath='{.spec.allocations}' 2>/dev/null || true)
 if [[ -z "${ALLOCATIONS}" || "${ALLOCATIONS}" == "{}" ]]; then
-  pass "whereabouts IP pool: allocations released"
+  pass "whereabouts IP pool (${IPPOOL_NAME}): allocations released"
 else
-  fail "whereabouts IP pool: allocations still present (${ALLOCATIONS})"
+  fail "whereabouts IP pool (${IPPOOL_NAME}): allocations still present (${ALLOCATIONS})"
 fi
 
 echo ""

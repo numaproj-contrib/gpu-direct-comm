@@ -1,3 +1,7 @@
+# Load user-local overrides (registry, image names, etc.)
+# Copy config/local.env.mk.template to config/local.env.mk and edit.
+-include config/local.env.mk
+
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 WEBHOOK_NN_IMG ?= webhook-whereabouts-numanetwork:latest

@@ -50,6 +50,9 @@ CLAUDE.md
 # ECC plugin install (regenerable via ~/everything-claude-code/scripts/install-apply.js)
 .claude/
 
+# Local environment config (user-specific registry, image names)
+config/local.env.mk
+
 # local dev tool binaries
 numaflow_dev_env_tools/
 bin/

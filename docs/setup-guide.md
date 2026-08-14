@@ -748,11 +748,21 @@ kubectl get crd numanetworks.numaflow.numaproj.io
 
 ##### 2-6-2. Prepare an image registry
 
-Provision (or reuse) a container registry that both your build host and every cluster node can reach — for example an internal Harbor instance. The steps below use `<registry>/<project>` as a placeholder for its address and project/repository path; substitute your own.
+Provision (or reuse) a container registry that both your build host and every cluster node can reach — for example an internal Harbor instance.
+
+To avoid repeating the registry address on every `make` invocation, create a local config file:
+
+```bash
+cp config/local.env.mk.template config/local.env.mk
+# Edit config/local.env.mk and set IMG / WEBHOOK_NN_IMG to your registry address
+```
+
+This file is gitignored and loaded by `make` automatically via `-include`. Once configured, you can omit the `IMG=...` argument from `make` commands below.
 
 ##### 2-6-3. gpu-direct-comm controller manager deployment
 
 ```bash
+# If config/local.env.mk is configured, IMG= can be omitted
 make docker-build IMG=<registry>/<project>/controller:<tag>
 make docker-push IMG=<registry>/<project>/controller:<tag>
 make deploy-baremetal IMG=<registry>/<project>/controller:<tag>

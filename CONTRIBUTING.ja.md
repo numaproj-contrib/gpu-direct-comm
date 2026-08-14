@@ -1,6 +1,6 @@
 # gpu-direct-comm への貢献
 
-> このドキュメントは [CONTRIBUTING.md](./CONTRIBUTING.md)（英語版）の日本語訳です。内容に差異がある場合は英語版を正としてください。
+> このドキュメントが正です。英語版は [CONTRIBUTING.md](./CONTRIBUTING.md) を参照してください。内容に差異がある場合は本ドキュメント（日本語版）を正としてください。
 
 gpu-direct-comm への貢献に興味をお持ちいただきありがとうございます。このドキュメントでは、始め方と貢献プロセスで期待されることを説明します。
 
@@ -173,7 +173,7 @@ kubectl -n kube-system exec etcd-coredns-0 -- \
 # 各レコードの値（Pod の Secondary NIC IP）を確認
 kubectl -n kube-system exec etcd-coredns-0 -- \
   etcdctl get --prefix /skydns/local/vertexdomain/default/e2e-full-flow-pipeline/ --print-value-only
-# 期待値: 各レコードが {"host":"192.168.141.x"} 形式の JSON
+# 期待値: 各レコードが {"host":"192.168.140.x"} 形式の JSON
 ```
 
 #### 4. パイプライン中の Pod から宛先 Pod の IP 一覧が取得できることを検証
@@ -188,7 +188,7 @@ kubectl wait --for=condition=Ready pod/e2e-dns-test --timeout=30s
 # out vertex（宛先）の FQDN を解決（2 Pod → 2 IP、ラウンドロビン）
 # 直接通信では From 側が To 側の FQDN を引いて宛先 IP を取得する
 kubectl exec e2e-dns-test -- nslookup out.e2e-full-flow-pipeline.default.vertexdomain.local
-# 期待値: Address 行に 192.168.141.x が 1 件以上返る
+# 期待値: Address 行に 192.168.140.x が 1 件以上返る
 
 # テスト Pod はステップ５で使用するため，まだ削除しない
 ```
@@ -268,8 +268,6 @@ Secondary NIC のインターフェース名はハードウェアに依存しま
 #### 4. パイプライン中の Pod から宛先 Pod の IP 一覧が取得できることを検証
 
 [ローカルクラスタのステップ 4](#4-パイプライン中の-pod-から宛先-pod-の-ip-一覧が取得できることを検証) と同じです。
-
-#### 5. Pipeline を削除しリソースが解放されることを検証
 
 #### 5. Pipeline を削除しリソースが解放されることを検証
 

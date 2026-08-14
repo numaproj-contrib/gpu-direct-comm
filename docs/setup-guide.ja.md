@@ -750,11 +750,21 @@ kubectl get crd numanetworks.numaflow.numaproj.io
 
 ##### 2-6-2. イメージ用レジストリの準備
 
-ビルドを行うホストと、クラスタの全ノードの両方から到達可能なコンテナレジストリを用意（または既存のものを利用）してください（例: 社内Harbor等）。以下では、そのアドレスと project/repository パスを `<registry>/<project>` というプレースホルダーで表記します。実際の値に置き換えてください。
+ビルドを行うホストと、クラスタの全ノードの両方から到達可能なコンテナレジストリを用意（または既存のものを利用）してください（例: 社内Harbor等）。
+
+レジストリアドレスを毎回 `make` コマンドに指定する手間を省くため、ローカル設定ファイルを作成できます:
+
+```bash
+cp config/local.env.mk.template config/local.env.mk
+# config/local.env.mk を編集し、IMG / WEBHOOK_NN_IMG にレジストリアドレスを設定
+```
+
+このファイルは gitignore されており、`make` 実行時に `-include` で自動的に読み込まれます。設定済みであれば、以下のコマンドから `IMG=...` 引数を省略できます。
 
 ##### 2-6-3. gpu-direct-comm controller manager のデプロイ
 
 ```bash
+# config/local.env.mk を設定済みなら IMG= は省略可
 make docker-build IMG=<registry>/<project>/controller:<tag>
 make docker-push IMG=<registry>/<project>/controller:<tag>
 make deploy-baremetal IMG=<registry>/<project>/controller:<tag>

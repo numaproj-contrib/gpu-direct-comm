@@ -177,7 +177,8 @@ fi
 
 # Query a non-existent name in the zone.  If the zone is loaded CoreDNS
 # returns NXDOMAIN; if not, it returns SERVFAIL.
-DNS_CHECK=$(kubectl run dns-check-$$ --rm -i --restart=Never \
+kubectl delete pod verify-setup-dns-check --ignore-not-found --wait=true 2>/dev/null || true
+DNS_CHECK=$(kubectl run verify-setup-dns-check --rm -i --restart=Never \
   --image=busybox:1.37 -- nslookup dummy.vertexdomain.local 2>&1 || true)
 if echo "${DNS_CHECK}" | grep -q "NXDOMAIN"; then
   pass "CoreDNS: vertexdomain.local zone active (NXDOMAIN)"
