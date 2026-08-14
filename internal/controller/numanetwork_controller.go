@@ -36,14 +36,7 @@ import (
 )
 
 const (
-	numaNetworkFinalizer = "gpu-direct-comm.numaproj.io/numa-network-ip"
-
-	// LabelNumaNetworkName is set on ResourceClaimTemplateSpec.ObjectMeta so
-	// that ResourceClaims created from the template inherit it. The finalizer
-	// uses this label to find ResourceClaims that must be released before
-	// the NumaNetwork can be safely deleted.
-	LabelNumaNetworkName = "gpu-direct-comm.numaproj.io/numanetwork-name"
-
+	numaNetworkFinalizer  = "gpu-direct-comm.numaproj.io/numa-network-ip"
 	finalizerRequeueDelay = 5 * time.Second
 )
 
@@ -116,15 +109,14 @@ func (r *NumaNetworkReconciler) countRelatedResourceClaims(ctx context.Context, 
 	var claims resourcev1.ResourceClaimList
 	if err := r.List(ctx, &claims,
 		client.InNamespace(nn.Namespace),
-		client.MatchingLabels{LabelNumaNetworkName: nn.Name},
+		client.MatchingLabels{numaflowv1alpha1.LabelNumaNetworkName: nn.Name},
 	); err != nil {
 		return 0, fmt.Errorf("list ResourceClaims: %w", err)
 	}
 	return len(claims.Items), nil
 }
 
-// reconcileRCT creates or updates the ResourceClaimTemplate owned by nn,
-// then writes the RCT name back to nn.Status.
+// reconcileRCT creates or updates the ResourceClaimTemplate owned by nn.
 func (r *NumaNetworkReconciler) reconcileRCT(ctx context.Context, nn *numaflowv1alpha1.NumaNetwork) error {
 	desired := BuildResourceClaimTemplate(nn)
 	if err := controllerutil.SetControllerReference(nn, desired, r.Scheme); err != nil {
@@ -163,7 +155,9 @@ func (r *NumaNetworkReconciler) reconcileRCT(ctx context.Context, nn *numaflowv1
 			return fmt.Errorf("set controller reference: %w", err)
 		}
 		updated.Spec = desired.Spec
+		updated.Labels = desired.Labels
 		if !equality.Semantic.DeepEqual(existing.Spec, desired.Spec) ||
+			!equality.Semantic.DeepEqual(existing.Labels, desired.Labels) ||
 			!equality.Semantic.DeepEqual(existing.OwnerReferences, updated.OwnerReferences) {
 			if err := r.Update(ctx, updated); err != nil {
 				return fmt.Errorf("update RCT: %w", err)
@@ -171,15 +165,6 @@ func (r *NumaNetworkReconciler) reconcileRCT(ctx context.Context, nn *numaflowv1
 		}
 	}
 
-	// Write status only when it changes. Use Patch to avoid resourceVersion
-	// conflicts when the spec is updated concurrently (fix 3).
-	if nn.Status.ResourceClaimTemplateName != desired.Name {
-		patch := nn.DeepCopy()
-		patch.Status.ResourceClaimTemplateName = desired.Name
-		if err := r.Status().Patch(ctx, patch, client.MergeFrom(nn)); err != nil {
-			return fmt.Errorf("update status: %w", err)
-		}
-	}
 	return nil
 }
 
@@ -194,11 +179,14 @@ func BuildResourceClaimTemplate(nn *numaflowv1alpha1.NumaNetwork) *resourcev1.Re
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      nn.Name + "-rct",
 			Namespace: nn.Namespace,
+			Labels: map[string]string{
+				numaflowv1alpha1.LabelNumaNetworkName: nn.Name,
+			},
 		},
 		Spec: resourcev1.ResourceClaimTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					LabelNumaNetworkName: nn.Name,
+					numaflowv1alpha1.LabelNumaNetworkName: nn.Name,
 				},
 			},
 			Spec: resourcev1.ResourceClaimSpec{

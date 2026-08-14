@@ -30,6 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	numaflowv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/api/v1alpha1"
 )
 
 const (
@@ -102,12 +104,12 @@ func (m *VertexDomainMutator) Handle(ctx context.Context, req admission.Request)
 	if pod.Labels == nil {
 		pod.Labels = map[string]string{}
 	}
-	pod.Labels[LabelVertexDomain] = LabelVertexDomainValue
+	pod.Labels[numaflowv1alpha1.LabelVertexDomain] = numaflowv1alpha1.LabelVertexDomainValue
 
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[AnnotationVertexDomainFQDN] = fqdn
+	pod.Annotations[numaflowv1alpha1.AnnotationVertexDomainFQDN] = fqdn
 
 	targets, err := collectTargetFQDNs(vertexName, bindings, pipelineName, ns)
 	if err != nil {

@@ -33,8 +33,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	numaflowv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/api/v1alpha1"
 	"github.com/numaproj-contrib/gpu-direct-comm/internal/dns"
-	webhookv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/internal/webhook/v1alpha1"
 )
 
 const (
@@ -65,11 +65,11 @@ func (r *VertexDomainReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, fmt.Errorf("get Pod: %w", err)
 	}
 
-	if _, hasLabel := pod.Labels[webhookv1alpha1.LabelVertexDomain]; !hasLabel {
+	if _, hasLabel := pod.Labels[numaflowv1alpha1.LabelVertexDomain]; !hasLabel {
 		return ctrl.Result{}, nil
 	}
 
-	fqdn := pod.Annotations[webhookv1alpha1.AnnotationVertexDomainFQDN]
+	fqdn := pod.Annotations[numaflowv1alpha1.AnnotationVertexDomainFQDN]
 	if fqdn == "" {
 		log.V(1).Info("vertex-domain label present but FQDN annotation missing, skipping")
 		return ctrl.Result{}, nil
@@ -158,7 +158,7 @@ func (r *VertexDomainReconciler) extractSecondaryNICIP(ctx context.Context, pod 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VertexDomainReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	labelExists := predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		_, ok := obj.GetLabels()[webhookv1alpha1.LabelVertexDomain]
+		_, ok := obj.GetLabels()[numaflowv1alpha1.LabelVertexDomain]
 		return ok
 	})
 

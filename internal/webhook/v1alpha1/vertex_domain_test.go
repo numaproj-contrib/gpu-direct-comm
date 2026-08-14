@@ -19,13 +19,15 @@ package v1alpha1
 import (
 	"strings"
 	"testing"
+
+	numaflowv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/api/v1alpha1"
 )
 
 func TestVertexDomainConstants(t *testing.T) {
-	if LabelVertexDomainValue != "true" {
-		t.Errorf("LabelVertexDomainValue = %q, want %q", LabelVertexDomainValue, "true")
+	if numaflowv1alpha1.LabelVertexDomainValue != "true" {
+		t.Errorf("LabelVertexDomainValue = %q, want %q", numaflowv1alpha1.LabelVertexDomainValue, "true")
 	}
-	if AnnotationVertexDomainFQDN == "" {
+	if numaflowv1alpha1.AnnotationVertexDomainFQDN == "" {
 		t.Error("AnnotationVertexDomainFQDN must not be empty")
 	}
 }

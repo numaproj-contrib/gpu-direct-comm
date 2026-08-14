@@ -22,17 +22,6 @@ import (
 )
 
 const (
-	// LabelVertexDomain is the label key used as a marker on Vertex Pods
-	// that participate in vertexDomain DNS registration.
-	LabelVertexDomain = "gpu-direct-comm.numaproj.io/vertex-domain"
-
-	// LabelVertexDomainValue is the marker value set on LabelVertexDomain.
-	LabelVertexDomainValue = "true"
-
-	// AnnotationVertexDomainFQDN is the annotation key that stores the actual
-	// vertexDomain FQDN. Controllers read this annotation to register DNS records.
-	AnnotationVertexDomainFQDN = "gpu-direct-comm.numaproj.io/vertex-domain-fqdn"
-
 	// EnvVertexDomainTargets is the env var name injected into From-side Vertex
 	// Pod containers. Its value is a comma-separated list of destination FQDNs
 	// that the UDF SDK reads to resolve Secondary NIC IPs (ADR-004).

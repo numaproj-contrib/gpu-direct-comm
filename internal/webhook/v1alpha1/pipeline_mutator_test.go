@@ -23,6 +23,7 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	gomodulesjsonpatch "gomodules.xyz/jsonpatch/v2"
+	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -123,6 +124,7 @@ func TestPipelineMutator_Handle(t *testing.T) {
 		vertices []map[string]any
 		edges    []map[string]string
 		seedNNs  []*numaflowv1alpha1.NumaNetwork
+		seedRCTs []*resourcev1.ResourceClaimTemplate
 
 		wantAllowed bool
 		// wantPatches is false when we expect no patches (annotation absent or no direct bindings)
@@ -147,6 +149,7 @@ func TestPipelineMutator_Handle(t *testing.T) {
 			vertices:    baseVertices,
 			edges:       baseEdges,
 			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
+			seedRCTs:    []*resourcev1.ResourceClaimTemplate{newRCT(nnName)},
 			wantAllowed: true,
 			wantPatches: true,
 			vertexClaims: map[string][]map[string]any{
@@ -169,6 +172,7 @@ func TestPipelineMutator_Handle(t *testing.T) {
 				{"from": "b", "to": "c"},
 			},
 			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
+			seedRCTs:    []*resourcev1.ResourceClaimTemplate{newRCT(nnName)},
 			wantAllowed: true,
 			wantPatches: true,
 			vertexClaims: map[string][]map[string]any{
@@ -192,6 +196,7 @@ func TestPipelineMutator_Handle(t *testing.T) {
 			},
 			edges:       baseEdges,
 			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
+			seedRCTs:    []*resourcev1.ResourceClaimTemplate{newRCT(nnName)},
 			wantAllowed: true,
 			wantPatches: true,
 			vertexClaims: map[string][]map[string]any{
@@ -212,15 +217,46 @@ func TestPipelineMutator_Handle(t *testing.T) {
 			wantAllowed: true,
 			wantPatches: false,
 		},
+		{
+			name: "(f) direct binding but no RCT → Errored",
+			annotations: map[string]string{
+				AnnotationNumaNetworkEdges: directBinding,
+			},
+			vertices:    baseVertices,
+			edges:       baseEdges,
+			seedNNs:     []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
+			wantAllowed: false,
+		},
+		{
+			name: "(g) direct binding with duplicate RCTs → Errored",
+			annotations: map[string]string{
+				AnnotationNumaNetworkEdges: directBinding,
+			},
+			vertices: baseVertices,
+			edges:    baseEdges,
+			seedNNs:  []*numaflowv1alpha1.NumaNetwork{newNumaNetwork(nnName)},
+			seedRCTs: []*resourcev1.ResourceClaimTemplate{
+				newRCT(nnName),
+				func() *resourcev1.ResourceClaimTemplate {
+					dup := newRCT(nnName)
+					dup.Name = nnName + "-rct-dup"
+					return dup
+				}(),
+			},
+			wantAllowed: false,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Arrange
 			s := buildWebhookScheme(t)
-			objects := make([]runtime.Object, 0, len(tc.seedNNs))
+			objects := make([]runtime.Object, 0, len(tc.seedNNs)+len(tc.seedRCTs))
 			for _, nn := range tc.seedNNs {
 				objects = append(objects, nn)
+			}
+			for _, rct := range tc.seedRCTs {
+				objects = append(objects, rct)
 			}
 			fakeClient := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objects...).Build()
 			mutator := &PipelineMutator{Client: fakeClient, Scheme: s}

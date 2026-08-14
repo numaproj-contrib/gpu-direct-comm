@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	admissionv1 "k8s.io/api/admission/v1"
+	resourcev1 "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -42,6 +43,9 @@ func buildWebhookScheme(t *testing.T) *runtime.Scheme {
 	if err := numaflowv1alpha1.AddToScheme(s); err != nil {
 		t.Fatalf("numaflowv1alpha1: %v", err)
 	}
+	if err := resourcev1.AddToScheme(s); err != nil {
+		t.Fatalf("resourcev1: %v", err)
+	}
 	return s
 }
 
@@ -56,6 +60,26 @@ func newNumaNetwork(name string) *numaflowv1alpha1.NumaNetwork { //nolint:unpara
 			RefDeviceClass: numaflowv1alpha1.RefDeviceClass{Name: "vf.nvidia.dra.net"},
 			RefResourceClaimDranet: numaflowv1alpha1.RefResourceClaimDranet{
 				IPRange: "192.168.10.0/24",
+			},
+		},
+	}
+}
+
+// newRCT returns a ResourceClaimTemplate labeled with the given NumaNetwork name.
+func newRCT(nnName string) *resourcev1.ResourceClaimTemplate { //nolint:unparam
+	return &resourcev1.ResourceClaimTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nnName + "-rct",
+			Namespace: "default",
+			Labels: map[string]string{
+				numaflowv1alpha1.LabelNumaNetworkName: nnName,
+			},
+		},
+		Spec: resourcev1.ResourceClaimTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					numaflowv1alpha1.LabelNumaNetworkName: nnName,
+				},
 			},
 		},
 	}

@@ -95,12 +95,12 @@ func TestBuildResourceClaimTemplate_NumaNetworkLabel(t *testing.T) {
 	rct := BuildResourceClaimTemplate(nn)
 
 	// Assert: Spec.ObjectMeta.Labels carries the numanetwork-name label
-	got, ok := rct.Spec.Labels[LabelNumaNetworkName]
+	got, ok := rct.Spec.Labels[numaflowv1alpha1.LabelNumaNetworkName]
 	if !ok {
-		t.Fatalf("label %q not found in RCT Spec.ObjectMeta.Labels", LabelNumaNetworkName)
+		t.Fatalf("label %q not found in RCT Spec.ObjectMeta.Labels", numaflowv1alpha1.LabelNumaNetworkName)
 	}
 	if got != nn.Name {
-		t.Errorf("label %q = %q, want %q", LabelNumaNetworkName, got, nn.Name)
+		t.Errorf("label %q = %q, want %q", numaflowv1alpha1.LabelNumaNetworkName, got, nn.Name)
 	}
 }
 
@@ -211,29 +211,6 @@ func TestReconcile_OwnerReference(t *testing.T) {
 	}
 	if owner.Controller == nil || !*owner.Controller {
 		t.Error("owner.Controller must be true")
-	}
-}
-
-func TestReconcile_StatusUpdated(t *testing.T) {
-	// Arrange
-	s := buildScheme(t)
-	nn := newNN("test-ns")
-	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn).WithStatusSubresource(nn).Build()
-	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
-
-	// Act
-	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}})
-	if err != nil {
-		t.Fatalf("Reconcile error: %v", err)
-	}
-
-	// Assert: status.resourceClaimTemplateName is set
-	updated := &numaflowv1alpha1.NumaNetwork{}
-	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}, updated); err != nil {
-		t.Fatalf("NumaNetwork not found: %v", err)
-	}
-	if updated.Status.ResourceClaimTemplateName != "test-nn-rct" {
-		t.Errorf("Status.ResourceClaimTemplateName = %q, want %q", updated.Status.ResourceClaimTemplateName, "test-nn-rct")
 	}
 }
 
@@ -377,6 +354,36 @@ func TestReconcile_RCTSpecUpdatedOnChange(t *testing.T) {
 	}
 }
 
+func TestReconcile_ExistingRCTGetsLabelBackfilled(t *testing.T) {
+	// Arrange: pre-create RCT without the top-level numanetwork-name label
+	// (simulates an RCT created by the pre-hotfix controller)
+	s := buildScheme(t)
+	nn := newNN("test-ns")
+	staleRCT := BuildResourceClaimTemplate(nn)
+	staleRCT.Labels = nil // remove top-level label to simulate old RCT
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(nn, staleRCT).WithStatusSubresource(nn).Build()
+	r := &NumaNetworkReconciler{Client: fakeClient, Scheme: s}
+
+	// Act
+	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-nn", Namespace: "test-ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile error: %v", err)
+	}
+
+	// Assert: top-level label is now present
+	rct := &resourcev1.ResourceClaimTemplate{}
+	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-nn-rct", Namespace: "test-ns"}, rct); err != nil {
+		t.Fatalf("RCT not found: %v", err)
+	}
+	got, ok := rct.Labels[numaflowv1alpha1.LabelNumaNetworkName]
+	if !ok {
+		t.Fatalf("top-level label %q missing after reconcile — backfill failed", numaflowv1alpha1.LabelNumaNetworkName)
+	}
+	if got != "test-nn" {
+		t.Errorf("label value = %q, want %q", got, "test-nn")
+	}
+}
+
 // ─── Finalizer tests ────────────────────────────────────────────────────────
 
 func TestReconcile_FinalizerAdded(t *testing.T) {
@@ -415,7 +422,7 @@ func TestReconcile_DeletionBlockedWhileResourceClaimsExist(t *testing.T) {
 			Name:      "some-pod-test-nn-rct-abc12",
 			Namespace: "test-ns",
 			Labels: map[string]string{
-				LabelNumaNetworkName: "test-nn",
+				numaflowv1alpha1.LabelNumaNetworkName: "test-nn",
 			},
 		},
 		Spec: resourcev1.ResourceClaimSpec{},
@@ -494,7 +501,7 @@ func TestReconcile_UnrelatedResourceClaimDoesNotBlockDeletion(t *testing.T) {
 			Name:      "unrelated-claim",
 			Namespace: "test-ns",
 			Labels: map[string]string{
-				LabelNumaNetworkName: "other-nn",
+				numaflowv1alpha1.LabelNumaNetworkName: "other-nn",
 			},
 		},
 		Spec: resourcev1.ResourceClaimSpec{},

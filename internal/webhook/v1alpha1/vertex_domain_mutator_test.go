@@ -290,11 +290,11 @@ func TestVertexDomainMutator_Handle(t *testing.T) {
 
 			// Apply patches and verify label marker + annotation FQDN
 			patched := applyPatches(t, raw, resp.Patches)
-			gotLabel := extractPodLabel(t, patched, LabelVertexDomain)
-			if gotLabel != LabelVertexDomainValue {
-				t.Errorf("vertex-domain label: got %q, want %q", gotLabel, LabelVertexDomainValue)
+			gotLabel := extractPodLabel(t, patched, numaflowv1alpha1.LabelVertexDomain)
+			if gotLabel != numaflowv1alpha1.LabelVertexDomainValue {
+				t.Errorf("vertex-domain label: got %q, want %q", gotLabel, numaflowv1alpha1.LabelVertexDomainValue)
 			}
-			gotFQDN := extractPodAnnotation(t, patched, AnnotationVertexDomainFQDN)
+			gotFQDN := extractPodAnnotation(t, patched, numaflowv1alpha1.AnnotationVertexDomainFQDN)
 			if gotFQDN != tc.wantFQDN {
 				t.Errorf("vertex-domain-fqdn annotation: got %q, want %q", gotFQDN, tc.wantFQDN)
 			}
