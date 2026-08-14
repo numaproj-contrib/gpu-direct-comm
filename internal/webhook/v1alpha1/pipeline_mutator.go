@@ -22,11 +22,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
+	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	numaflowv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/api/v1alpha1"
 )
 
 // +kubebuilder:webhook:path=/mutate-numaflow-numaproj-io-v1alpha1-pipeline,mutating=true,failurePolicy=fail,sideEffects=None,groups=numaflow.numaproj.io,resources=pipelines,verbs=create;update,versions=v1alpha1,name=mpipeline.numaproj.io,admissionReviewVersions=v1
@@ -39,7 +43,7 @@ type PipelineMutator struct {
 }
 
 // Handle implements admission.Handler.
-func (m *PipelineMutator) Handle(_ context.Context, req admission.Request) admission.Response {
+func (m *PipelineMutator) Handle(ctx context.Context, req admission.Request) admission.Response {
 	obj := &unstructured.Unstructured{}
 	if err := json.Unmarshal(req.Object.Raw, obj); err != nil {
 		return admission.Errored(http.StatusBadRequest, fmt.Errorf("decode Pipeline: %w", err))
@@ -61,12 +65,20 @@ func (m *PipelineMutator) Handle(_ context.Context, req admission.Request) admis
 	// vertex name → ordered slice of RCT names to add.
 	toInject := map[string][]string{}
 	queued := map[string]map[string]struct{}{} // vertex → set of already-queued RCT names
+	resolved := map[string]string{}            // numaNetworkName → rctName cache
 
 	for _, b := range bindings {
 		if b.ConnectionType != ConnectionTypeDirect {
 			continue
 		}
-		rctName := b.NumaNetwork + "-rct"
+		rctName, ok := resolved[b.NumaNetwork]
+		if !ok {
+			rctName, err = m.resolveRCTName(ctx, req.Namespace, b.NumaNetwork)
+			if err != nil {
+				return admission.Errored(http.StatusUnprocessableEntity, err)
+			}
+			resolved[b.NumaNetwork] = rctName
+		}
 		for _, vertexName := range []string{b.From, b.To} {
 			if _, exists := queued[vertexName]; !exists {
 				queued[vertexName] = map[string]struct{}{}
@@ -93,6 +105,28 @@ func (m *PipelineMutator) Handle(_ context.Context, req admission.Request) admis
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("marshal patched Pipeline: %w", err))
 	}
 	return admission.PatchResponseFromRaw(req.Object.Raw, patched)
+}
+
+func (m *PipelineMutator) resolveRCTName(ctx context.Context, namespace, numaNetworkName string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	var rctList resourcev1.ResourceClaimTemplateList
+	if err := m.Client.List(ctx, &rctList,
+		client.InNamespace(namespace),
+		client.MatchingLabels{numaflowv1alpha1.LabelNumaNetworkName: numaNetworkName},
+	); err != nil {
+		return "", fmt.Errorf("list RCTs for NumaNetwork %q: %w", numaNetworkName, err)
+	}
+	if len(rctList.Items) == 0 {
+		return "", fmt.Errorf("no ResourceClaimTemplate found for NumaNetwork %q (label %s=%s)",
+			numaNetworkName, numaflowv1alpha1.LabelNumaNetworkName, numaNetworkName)
+	}
+	if len(rctList.Items) > 1 {
+		return "", fmt.Errorf("expected 1 ResourceClaimTemplate for NumaNetwork %q, found %d",
+			numaNetworkName, len(rctList.Items))
+	}
+	return rctList.Items[0].Name, nil
 }
 
 // injectResourceClaims writes the given RCT names into spec.vertices[*].resourceClaims

@@ -43,9 +43,6 @@ func TestNumaNetworkSpecFields(t *testing.T) {
 				IPRange: "192.168.10.0/24",
 			},
 		},
-		Status: NumaNetworkStatus{
-			ResourceClaimTemplateName: "pipeline1-multi-network-rct",
-		},
 	}
 
 	if nn.Spec.RefDeviceClass.Name != "vf.nvidia.dra.net" {
@@ -53,9 +50,6 @@ func TestNumaNetworkSpecFields(t *testing.T) {
 	}
 	if nn.Spec.RefResourceClaimDranet.IPRange != "192.168.10.0/24" {
 		t.Errorf("IPRange = %q", nn.Spec.RefResourceClaimDranet.IPRange)
-	}
-	if nn.Status.ResourceClaimTemplateName != "pipeline1-multi-network-rct" {
-		t.Errorf("ResourceClaimTemplateName = %q", nn.Status.ResourceClaimTemplateName)
 	}
 }
 

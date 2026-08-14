@@ -33,7 +33,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	webhookv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/internal/webhook/v1alpha1"
+	numaflowv1alpha1 "github.com/numaproj-contrib/gpu-direct-comm/api/v1alpha1"
 )
 
 // mockStore records calls to Put/Get/Delete for test assertions.
@@ -130,10 +130,10 @@ func TestVertexDomainReconciler(t *testing.T) {
 				Name:      podName,
 				Namespace: namespace,
 				Labels: map[string]string{
-					webhookv1alpha1.LabelVertexDomain: webhookv1alpha1.LabelVertexDomainValue,
+					numaflowv1alpha1.LabelVertexDomain: numaflowv1alpha1.LabelVertexDomainValue,
 				},
 				Annotations: map[string]string{
-					webhookv1alpha1.AnnotationVertexDomainFQDN: fqdn,
+					numaflowv1alpha1.AnnotationVertexDomainFQDN: fqdn,
 				},
 			},
 			Status: corev1.PodStatus{
@@ -187,7 +187,7 @@ func TestVertexDomainReconciler(t *testing.T) {
 			name: "Pod without vertexDomain label is skipped",
 			pod: func() *corev1.Pod {
 				p := basePod()
-				delete(p.Labels, webhookv1alpha1.LabelVertexDomain)
+				delete(p.Labels, numaflowv1alpha1.LabelVertexDomain)
 				return p
 			}(),
 			claim:   baseClaim(),
@@ -197,7 +197,7 @@ func TestVertexDomainReconciler(t *testing.T) {
 			name: "Pod with label marker but no FQDN annotation is skipped",
 			pod: func() *corev1.Pod {
 				p := basePod()
-				delete(p.Annotations, webhookv1alpha1.AnnotationVertexDomainFQDN)
+				delete(p.Annotations, numaflowv1alpha1.AnnotationVertexDomainFQDN)
 				return p
 			}(),
 			claim:   baseClaim(),
@@ -321,10 +321,10 @@ func TestVertexDomainReconciler_Deletion(t *testing.T) {
 			DeletionTimestamp: &now,
 			Finalizers:        []string{vertexDomainFinalizer},
 			Labels: map[string]string{
-				webhookv1alpha1.LabelVertexDomain: webhookv1alpha1.LabelVertexDomainValue,
+				numaflowv1alpha1.LabelVertexDomain: numaflowv1alpha1.LabelVertexDomainValue,
 			},
 			Annotations: map[string]string{
-				webhookv1alpha1.AnnotationVertexDomainFQDN: fqdn,
+				numaflowv1alpha1.AnnotationVertexDomainFQDN: fqdn,
 			},
 		},
 	}
@@ -392,10 +392,10 @@ func TestVertexDomainReconciler_StoreDeleteError(t *testing.T) {
 			DeletionTimestamp: &now,
 			Finalizers:        []string{vertexDomainFinalizer},
 			Labels: map[string]string{
-				webhookv1alpha1.LabelVertexDomain: webhookv1alpha1.LabelVertexDomainValue,
+				numaflowv1alpha1.LabelVertexDomain: numaflowv1alpha1.LabelVertexDomainValue,
 			},
 			Annotations: map[string]string{
-				webhookv1alpha1.AnnotationVertexDomainFQDN: fqdn,
+				numaflowv1alpha1.AnnotationVertexDomainFQDN: fqdn,
 			},
 		},
 	}
