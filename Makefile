@@ -165,8 +165,17 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx rm gpu-direct-comm-builder
 	rm Dockerfile.cross
 
+MANAGER_KUSTOMIZATION := config/manager/kustomization.yaml
+.PHONY: ensure-manager-kustomization
+ensure-manager-kustomization:
+	@test -f $(MANAGER_KUSTOMIZATION) || printf '%s\n' \
+		'apiVersion: kustomize.config.k8s.io/v1beta1' \
+		'kind: Kustomization' \
+		'resources:' \
+		'- manager.yaml' > $(MANAGER_KUSTOMIZATION)
+
 .PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+build-installer: manifests generate kustomize ensure-manager-kustomization ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
@@ -188,12 +197,12 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	if [ -n "$$out" ]; then echo "$$out" | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -; else echo "No CRDs to delete; skipping."; fi
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: manifests kustomize ensure-manager-kustomization ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
 
 .PHONY: deploy-baremetal
-deploy-baremetal: manifests kustomize ## Deploy controller with bare-metal overlay (kubeadm etcd endpoint).
+deploy-baremetal: manifests kustomize ensure-manager-kustomization ## Deploy controller with bare-metal overlay (kubeadm etcd endpoint).
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/overlays/baremetal | "$(KUBECTL)" apply -f -
 

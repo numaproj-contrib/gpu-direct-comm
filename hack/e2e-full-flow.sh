@@ -171,9 +171,21 @@ for pod in $(kubectl get pods \
   for claim in $(kubectl get "$pod" -o jsonpath='{.status.resourceClaimStatuses[*].resourceClaimName}' 2>/dev/null); do
     ips=$(kubectl get resourceclaim "${claim}" \
       -o jsonpath='{range .status.devices[*]}{.networkData.ips[*]}{"\n"}{end}' 2>/dev/null || true)
+    iface_name=$(kubectl get resourceclaim "${claim}" \
+      -o jsonpath='{.status.devices[0].networkData.interfaceName}' 2>/dev/null || true)
     if [[ -n "${ips}" ]]; then
       pass "${pod_name}: IP assigned (${ips})"
       has_ip=true
+
+      # Baremetal only: verify the interface is an SR-IOV VF, not a dummy device.
+      if [[ "${ENV}" == "baremetal" ]]; then
+        if [[ -n "${iface_name}" && "${iface_name}" != "dummy0" ]]; then
+          pass "${pod_name}: IP ${ips} bound to VF interface ${iface_name}"
+        else
+          fail "${pod_name}: expected SR-IOV VF interface, got '${iface_name}'"
+        fi
+      fi
+
       break
     fi
   done

@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	gomodulesjsonpatch "gomodules.xyz/jsonpatch/v2"
@@ -259,7 +260,12 @@ func TestPipelineMutator_Handle(t *testing.T) {
 				objects = append(objects, rct)
 			}
 			fakeClient := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objects...).Build()
-			mutator := &PipelineMutator{Client: fakeClient, Scheme: s}
+			mutator := &PipelineMutator{
+				Client:             fakeClient,
+				Scheme:             s,
+				RCTResolveTimeout:  100 * time.Millisecond,
+				RCTResolveInterval: 10 * time.Millisecond,
+			}
 
 			raw := pipelineWithVerticesJSON(t, ns, tc.annotations, tc.vertices, tc.edges)
 			req := makeRequest(ns, raw)
