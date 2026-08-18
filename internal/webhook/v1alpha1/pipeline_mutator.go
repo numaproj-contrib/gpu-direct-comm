@@ -40,6 +40,13 @@ import (
 type PipelineMutator struct {
 	Client client.Client
 	Scheme *runtime.Scheme
+
+	// RCTResolveTimeout is the maximum time to wait for the RCT to appear.
+	// Zero means use the default (rctResolveTimeout).
+	RCTResolveTimeout time.Duration
+	// RCTResolveInterval is the polling interval for RCT resolution.
+	// Zero means use the default (rctResolveInterval).
+	RCTResolveInterval time.Duration
 }
 
 // Handle implements admission.Handler.
@@ -107,26 +114,50 @@ func (m *PipelineMutator) Handle(ctx context.Context, req admission.Request) adm
 	return admission.PatchResponseFromRaw(req.Object.Raw, patched)
 }
 
+const (
+	rctResolveTimeout  = 10 * time.Second
+	rctResolveInterval = 500 * time.Millisecond
+)
+
+// resolveRCTName finds the RCT created by NumaNetworkReconciler for the given NumaNetwork.
+// When NumaNetwork and Pipeline are applied together, the reconciler may not have
+// created the RCT yet, so this method retries until the RCT appears or the timeout expires.
 func (m *PipelineMutator) resolveRCTName(ctx context.Context, namespace, numaNetworkName string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	timeout := m.RCTResolveTimeout
+	if timeout == 0 {
+		timeout = rctResolveTimeout
+	}
+	interval := m.RCTResolveInterval
+	if interval == 0 {
+		interval = rctResolveInterval
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	var rctList resourcev1.ResourceClaimTemplateList
-	if err := m.Client.List(ctx, &rctList,
-		client.InNamespace(namespace),
-		client.MatchingLabels{numaflowv1alpha1.LabelNumaNetworkName: numaNetworkName},
-	); err != nil {
-		return "", fmt.Errorf("list RCTs for NumaNetwork %q: %w", numaNetworkName, err)
+	for {
+		var rctList resourcev1.ResourceClaimTemplateList
+		if err := m.Client.List(ctx, &rctList,
+			client.InNamespace(namespace),
+			client.MatchingLabels{numaflowv1alpha1.LabelNumaNetworkName: numaNetworkName},
+		); err != nil {
+			return "", fmt.Errorf("list RCTs for NumaNetwork %q: %w", numaNetworkName, err)
+		}
+		if len(rctList.Items) == 1 {
+			return rctList.Items[0].Name, nil
+		}
+		if len(rctList.Items) > 1 {
+			return "", fmt.Errorf("expected 1 ResourceClaimTemplate for NumaNetwork %q, found %d",
+				numaNetworkName, len(rctList.Items))
+		}
+
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("no ResourceClaimTemplate found for NumaNetwork %q within %v (label %s=%s)",
+				numaNetworkName, timeout, numaflowv1alpha1.LabelNumaNetworkName, numaNetworkName)
+		case <-time.After(interval):
+		}
 	}
-	if len(rctList.Items) == 0 {
-		return "", fmt.Errorf("no ResourceClaimTemplate found for NumaNetwork %q (label %s=%s)",
-			numaNetworkName, numaflowv1alpha1.LabelNumaNetworkName, numaNetworkName)
-	}
-	if len(rctList.Items) > 1 {
-		return "", fmt.Errorf("expected 1 ResourceClaimTemplate for NumaNetwork %q, found %d",
-			numaNetworkName, len(rctList.Items))
-	}
-	return rctList.Items[0].Name, nil
 }
 
 // injectResourceClaims writes the given RCT names into spec.vertices[*].resourceClaims

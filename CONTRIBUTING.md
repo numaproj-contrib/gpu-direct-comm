@@ -261,6 +261,20 @@ Same as [Local Cluster step 2](#2-verify-ip-assignment-from-iprange).
 
 The Secondary NIC interface name depends on your hardware (e.g. `enp4s0f0v0`). It is shown in the `Interface` field of the output.
 
+Then verify that the IP is bound to a real SR-IOV VF, not a dummy device. The `networkData.interfaceName` field in the ResourceClaim reports the actual interface name inside the Pod:
+
+```bash
+for pod in $(kubectl get pods -l gpu-direct-comm.numaproj.io/vertex-domain=true,numaflow.numaproj.io/pipeline-name=e2e-full-flow-pipeline -o name); do
+  pod_name=$(echo "$pod" | sed 's|pod/||')
+  echo "=== $pod_name ==="
+  for claim in $(kubectl get "$pod" -o jsonpath='{.status.resourceClaimStatuses[*].resourceClaimName}'); do
+    kubectl get resourceclaim "$claim" \
+      -o jsonpath='  Interface: {.status.devices[0].networkData.interfaceName}  IPs: {.status.devices[0].networkData.ips[*]}{"\n"}'
+  done
+done
+# Expected: each Pod shows a VF interface name (e.g. enp86s0f0v0), not "dummy0"
+```
+
 #### 3. Verify FQDN records in etcd
 
 Same as [Local Cluster step 3](#3-verify-fqdn-records-in-etcd).

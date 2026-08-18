@@ -261,6 +261,20 @@ kubectl describe pod -l numaflow.numaproj.io/pipeline-name=e2e-full-flow-pipelin
 
 Secondary NIC のインターフェース名はハードウェアに依存します（例: `enp4s0f0v0`）。上記出力の `Interface` フィールドに表示されます。
 
+次に、IP が dummy デバイスではなく実 SR-IOV VF にバインドされていることを確認します。ResourceClaim の `networkData.interfaceName` フィールドに Pod 内の実際のインターフェース名が記録されています:
+
+```bash
+for pod in $(kubectl get pods -l gpu-direct-comm.numaproj.io/vertex-domain=true,numaflow.numaproj.io/pipeline-name=e2e-full-flow-pipeline -o name); do
+  pod_name=$(echo "$pod" | sed 's|pod/||')
+  echo "=== $pod_name ==="
+  for claim in $(kubectl get "$pod" -o jsonpath='{.status.resourceClaimStatuses[*].resourceClaimName}'); do
+    kubectl get resourceclaim "$claim" \
+      -o jsonpath='  Interface: {.status.devices[0].networkData.interfaceName}  IPs: {.status.devices[0].networkData.ips[*]}{"\n"}'
+  done
+done
+# 期待結果: 各 Pod のインターフェース名が VF 名（例: enp86s0f0v0）であり、"dummy0" ではないこと
+```
+
 #### 3. etcd に Pod の FQDN が登録されていることを検証
 
 [ローカルクラスタのステップ 3](#3-etcd-に-pod-の-fqdn-が登録されていることを検証) と同じです。
