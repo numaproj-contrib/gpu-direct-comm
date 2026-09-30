@@ -177,11 +177,26 @@ if [[ ${#GPU_PATHS[@]} -eq 0 || ${#NIC_PATHS[@]} -eq 0 ]]; then
   warn "GPU or RDMA NIC not found; skipping ACS check"
 else
   for gpu in "${GPU_PATHS[@]}"; do
-    gpu_anc=$(pci_ancestors "${gpu}" | sort -u)
+    # Ordered nearest-device-first; do not sort, the LCA search below relies on order.
+    gpu_anc=$(pci_ancestors "${gpu}")
     for nic in "${NIC_PATHS[@]}"; do
-      nic_anc=$(pci_ancestors "${nic}" | sort -u)
-      common=$(comm -12 <(echo "${gpu_anc}") <(echo "${nic_anc}"))
-      BRIDGES="${BRIDGES}"$'\n'"${common}"
+      nic_anc=$(pci_ancestors "${nic}")
+      # Lowest common ancestor: nearest bridge to the GPU that also
+      # appears in the NIC's chain. Below it the paths diverge -- each
+      # branch's own bridge is where that switch's ACS enforces P2P
+      # redirect. Above it, GPU<->NIC traffic never travels there, so
+      # those bridges are irrelevant to this pair and must not be checked.
+      lca=""
+      while IFS= read -r b; do
+        if grep -qxF "${b}" <<< "${nic_anc}"; then
+          lca="${b}"
+          break
+        fi
+      done <<< "${gpu_anc}"
+      [[ -n "${lca}" ]] || continue
+      gpu_path=$(awk -v lca="${lca}" '{print} $0==lca{exit}' <<< "${gpu_anc}")
+      nic_path=$(awk -v lca="${lca}" '{print} $0==lca{exit}' <<< "${nic_anc}")
+      BRIDGES="${BRIDGES}"$'\n'"${gpu_path}"$'\n'"${nic_path}"
     done
   done
   BRIDGES=$(echo "${BRIDGES}" | grep -v '^$' | sort -u)
