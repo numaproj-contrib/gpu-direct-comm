@@ -1,0 +1,160 @@
+# GPUNetIO Feasibility PoC — Server + Client Pod manifests
+#
+# Each Pod requests:
+#   - 1x GPU via NVIDIA DRA driver (gpu.nvidia.com)
+#   - 1x RDMA NIC (SR-IOV VF) via DRANET (dra.net)
+#
+# Prerequisites:
+#   - DeviceClass gpu.nvidia.com (installed by nvidia-dra-driver-gpu Helm chart)
+#   - nvidia-peermem kernel module loaded on nodes
+#   - Container image pushed to Harbor registry
+#
+# Usage:
+#   # Step 1: Deploy server first
+#   kubectl apply -f poc/gpunetio-feasibility/k8s/gpunetio-poc.yaml
+#   kubectl wait --for=condition=Ready pod/gpunetio-server --timeout=120s
+#
+#   # Step 2: Get server RDMA IP and update client's SERVER_IP env
+#   kubectl exec gpunetio-server -- ip addr show
+#
+#   # Step 3: Deploy client (edit SERVER_IP first)
+#   kubectl logs gpunetio-server -f
+#   kubectl logs gpunetio-client -f
+---
+# RDMA NIC DeviceClass: selects SR-IOV VFs with RDMA capability.
+# VFs are identified by rdma=true (RDMA capable) and sriov=false
+# (VFs themselves don't have SR-IOV capability; only PFs do).
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: gpunetio-poc-rdma-vf
+spec:
+  selectors:
+    - cel:
+        expression: >
+          device.driver == "dra.net" &&
+          device.attributes["dra.net"].rdma == true &&
+          device.attributes["dra.net"].sriov == false
+---
+# GPU ResourceClaim for server
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: gpunetio-server-gpu
+spec:
+  devices:
+    requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.nvidia.com
+---
+# RDMA NIC ResourceClaim for server
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: gpunetio-server-rdma
+spec:
+  devices:
+    requests:
+      - name: rdma-nic
+        exactly:
+          deviceClassName: gpunetio-poc-rdma-vf
+---
+# GPU ResourceClaim for client
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: gpunetio-client-gpu
+spec:
+  devices:
+    requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.nvidia.com
+---
+# RDMA NIC ResourceClaim for client
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: gpunetio-client-rdma
+spec:
+  devices:
+    requests:
+      - name: rdma-nic
+        exactly:
+          deviceClassName: gpunetio-poc-rdma-vf
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpunetio-server
+  labels:
+    app: gpunetio-poc
+    role: server
+spec:
+  restartPolicy: Never
+  containers:
+    - name: gpunetio
+      image: 192.168.21.17:30003/gpu-direct-comm/gpunetio-poc:latest
+      # Server mode (default): waits for client connection.
+      # -d and -gpu are auto-detected via the init script (see command).
+      # For manual override, set IB_DEVICE and GPU_PCIE_ADDR env vars.
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          IB_DEV=${IB_DEVICE:-$(ibv_devinfo 2>/dev/null | grep hca_id | head -1 | awk '{print $2}')}
+          GPU_ADDR=${GPU_PCIE_ADDR:-$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader 2>/dev/null | head -1 | sed 's/0000://')}
+          echo "Using IB device: ${IB_DEV}, GPU PCIe: ${GPU_ADDR}"
+          exec gpunetio_rdma_write -d "${IB_DEV}" -gpu "${GPU_ADDR}" --use-rdma-cm
+      securityContext:
+        capabilities:
+          add:
+            - IPC_LOCK
+      resources:
+        claims:
+          - name: gpu
+          - name: rdma-nic
+  resourceClaims:
+    - name: gpu
+      resourceClaimName: gpunetio-server-gpu
+    - name: rdma-nic
+      resourceClaimName: gpunetio-server-rdma
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpunetio-client
+  labels:
+    app: gpunetio-poc
+    role: client
+spec:
+  restartPolicy: Never
+  containers:
+    - name: gpunetio
+      image: 192.168.21.17:30003/gpu-direct-comm/gpunetio-poc:latest
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          IB_DEV=${IB_DEVICE:-$(ibv_devinfo 2>/dev/null | grep hca_id | head -1 | awk '{print $2}')}
+          GPU_ADDR=${GPU_PCIE_ADDR:-$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader 2>/dev/null | head -1 | sed 's/0000://')}
+          echo "Using IB device: ${IB_DEV}, GPU PCIe: ${GPU_ADDR}"
+          exec gpunetio_rdma_write -d "${IB_DEV}" -gpu "${GPU_ADDR}" --use-rdma-cm -c "${SERVER_IP}"
+      env:
+        # Set to the server Pod's RDMA NIC IP address.
+        # After server Pod is Running:
+        #   kubectl exec gpunetio-server -- ip addr show
+        - name: SERVER_IP
+          value: "REPLACE_WITH_SERVER_RDMA_IP"
+      securityContext:
+        capabilities:
+          add:
+            - IPC_LOCK
+      resources:
+        claims:
+          - name: gpu
+          - name: rdma-nic
+  resourceClaims:
+    - name: gpu
+      resourceClaimName: gpunetio-client-gpu
+    - name: rdma-nic
+      resourceClaimName: gpunetio-client-rdma
