@@ -137,14 +137,14 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/dranet/refs/h
 kubectl -n kube-system rollout status ds/dranet --timeout=120s
 ```
 
-DRANET がデバイスを公開しているか確認します。
+DRANET がインストールされたことの確認として，デバイスを公開しているか確認します。
 
 ```bash
 kubectl get resourceslice
 ```
 
 何も返らない場合、k3s の DRA feature gate が有効になっていない可能性があります。k3s v1.34.x では `DynamicResourceAllocation` が既定で beta 有効ですが、それでも出力が無い場合は `k3d-config.yaml` に feature gate を明示的に追加してクラスタを再作成してください。
-
+　s
 ```yaml
 options:
   k3s:
@@ -183,6 +183,12 @@ whereabouts が各ノードに設定ファイルを書き込んだことを確�
 kubectl -n kube-system exec ds/whereabouts -- cat /host/etc/cni/net.d/whereabouts.d/whereabouts.conf
 # 期待値: "kubeconfig" フィールドを含む JSON
 ```
+
+```bash
+kubectl -n kube-system get ds whereabouts
+# 期待値: DaemonSet がすべてのスケジュール可能ノードで `READY`
+```
+
 
 #### 2-5. cert-manager のインストール
 
@@ -696,6 +702,15 @@ PF_NAME=$(ls -l /sys/class/net/ | grep "$PCI_ADDR" | grep -v 'v[0-9]' | awk '{pr
 sudo systemctl enable --now sriov-vf@${PF_NAME}.service
 ```
 
+##### 2-1-8. VF ポートの有効化
+
+以下のコマンドでVFのポートをリンクアップする
+
+```
+sudo ip link set <VFのインタフェース名> up
+```
+
+
 #### 2-2. DRANET のインストール
 
 DRANET は各ノードのネットワークインターフェース（上で作成した VF を含む）をスキャンし、Kubernetes DRA 経由で `ResourceSlice` オブジェクトとして公開します。DRANET がなければ、クラスタは VF を Pod に割り当てる手段がありません。
@@ -703,7 +718,7 @@ DRANET は各ノードのネットワークインターフェース（上で作�
 [ローカルクラスタ > 2-2. DRANET のインストール](#2-2-dranet-のインストール) と同一です。`DynamicResourceAllocation` feature gate は前段の ansible playbook（`feature_gates_dra_master` ロール）が有効化するため、DRANET インストール後に `kubectl get resourceslice` が空の場合は `k3d-config.yaml` の編集ではなく、そのロールの実行結果を確認してください（`k3d-config.yaml` はローカルクラスタにのみ適用されます）。インストール後、SR-IOV VF が DRANET に認識されていることを確認してください。
 
 ```bash
-kubectl get resourceslice -o yaml | grep -A5 'ifName'
+kubectl get resourceslice -o yaml | grep -A5 'ifName' | grep -C4 '192'
 # 期待値: VF のインターフェース名に対応するエントリが dra.net/type: sriov（または類似の値）とともに表示される
 ```
 
