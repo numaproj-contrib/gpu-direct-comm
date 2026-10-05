@@ -739,6 +739,19 @@ kubectl get deviceclass dranet-e2e-baremetal
 # 期待値: AGE 付きで DeviceClass が表示される
 ```
 
+想定するResourceSlice（GPUおよびNIC(VF)）が，ノードごとに公開されていることを確認する
+
+> ResourceSliceはdriverが管理する複数のデバイスをまとめてResourceSliceとして公開する
+
+```bash
+kubectl get resourceslice -o custom-columns=NAME:.metadata.name,DRIVER:.spec.driver,NODE:.spec.nodeName
+# 各ノード・ドライバごとのResourceSliceのNAMEを確認する
+
+kubectl get resourceslice <リソース名> -o yaml
+# spec.devices[].attributes.dra.net/ifName.string を確認し，VFのインタフェース名があることを確認する
+```
+
+
 #### 2-4. whereabouts のインストール
 
 [ローカルクラスタ > 2-4. whereabouts のインストール](#2-4-whereabouts-のインストール) と同一です。
