@@ -1,0 +1,154 @@
+# perftest on DRA — server + client Pod manifests for milestone G3-M1-2.
+#
+# Reproduces the four RDMA stages established on bare metal (M1-1) inside Pods,
+# where the only difference from bare metal is how GPU and NIC are wired in:
+#   (1) plain RDMA            ib_write_bw
+#   (2) GPUDirect, host mem   ib_write_bw
+#   (3) GPUDirect, GPU mem    ib_write_bw -M cuda
+#   (4) GDAKI, GPU-driven     ib_write_bw --engine gpunetio
+#
+# Each Pod receives:
+#   - 1x GPU             via nvidia-dra-driver-gpu (DeviceClass gpu.nvidia.com)
+#   - 1x RDMA SR-IOV VF  via the ResourceClaimTemplate the NumaNetwork
+#                        controller generates (gpunetio-perftest-rct)
+#   - an IP on that VF   via dranet BYODP -> webhook-whereabouts-numanetwork
+#                        -> whereabouts, resolved from the ipRange below
+#
+# The containers idle on `sleep infinity`: stages (1)-(4) are driven by
+# `kubectl exec` so that a failing stage does not take the Pod down with it.
+#
+# Prerequisites (all verified by `make verify-setup`):
+#   - setup-guide 2-1 ~ 2-3   SR-IOV VFs published with dra.net/isSriovVf=true
+#   - setup-guide 2-4, 2-6-4  whereabouts + webhook-whereabouts-numanetwork
+#   - setup-guide 2-6-5       dranet patched with --profile-provider=webhook
+#
+# Usage:
+#   kubectl apply -f gpunetio-feasibility/k8s/perftest-dra.yaml
+#   kubectl wait --for=condition=Ready pod/perftest-server pod/perftest-client --timeout=600s
+#
+# The first apply pulls a ~22 GB image on both nodes, hence the long timeout.
+# Steps after this point are documented in GPUNETIO_K8S_POD_EXECUTION_TEST.md
+# in the knowledge base.
+---
+# NumaNetwork is the entry point for both VF assignment and IP assignment.
+# The controller reconciles this into a ResourceClaimTemplate named
+# "<name>-rct" whose dranet opaque config carries {"profile": "<ns>/<name>"};
+# dranet then asks webhook-whereabouts-numanetwork to resolve that profile back
+# to the ipRange below. Taking the VF through a bare ResourceClaim instead
+# would attach the VF but leave it without an IP, and perftest needs an IP on
+# the VF netdev to resolve a RoCE GID.
+#
+# ipRange deliberately differs from the 192.168.140.0/24 used by the bare-metal
+# baseline: that subnet still has .4 and .6 pinned to VFs on the hosts, and
+# NumaNetworkSpec has no exclusion field, so whereabouts could hand out an
+# address already in use. Both Pods land in 192.168.140.0/24 and reach each
+# other over the same L2 segment.
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: NumaNetwork
+metadata:
+  name: gpunetio-perftest
+  namespace: default
+spec:
+  refDeviceClass:
+    name: dranet-e2e-baremetal
+  refResourceClaimDranet:
+    ipRange: "192.168.140.0/24"
+---
+# GPU claims are per Pod: a ResourceClaim is reserved by the first Pod that
+# consumes it, so server and client cannot share one.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: perftest-server-gpu
+  namespace: default
+spec:
+  devices:
+    requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.nvidia.com
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: perftest-client-gpu
+  namespace: default
+spec:
+  devices:
+    requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.nvidia.com
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: perftest-server
+  namespace: default
+  labels:
+    app: gpunetio-perftest
+    role: server
+spec:
+  # nodeSelector, not nodeName: DRA allocation is performed by the scheduler,
+  # and setting nodeName bypasses it, leaving the ResourceClaims unallocated.
+  # The node split mirrors the bare-metal baseline (client cobalt04 -> server
+  # cobalt06) so the measurements stay comparable.
+  nodeSelector:
+    kubernetes.io/hostname: cobalt06
+  containers:
+    - name: perftest
+      image: nvcr.io/nvidia/doca/doca:devel-cuda13.0.0-3.4.0-devel-host
+      command: ["sleep", "infinity"]
+      securityContext:
+        capabilities:
+          add:
+            # RDMA pins its memory regions; without IPC_LOCK the memlock limit
+            # makes ibv_reg_mr fail.
+            - IPC_LOCK
+      resources:
+        claims:
+          - name: gpu
+          - name: rdma-nic
+      env:
+        - name: LD_LIBRARY_PATH
+          value: "/usr/mpi/gcc/openmpi-current/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64"
+  resourceClaims:
+    - name: gpu
+      resourceClaimName: perftest-server-gpu
+    # resourceClaimTemplateName, not resourceClaimName: the template mints one
+    # claim per Pod, so server and client each get their own VF and their own
+    # address out of the ipRange.
+    - name: rdma-nic
+      resourceClaimTemplateName: gpunetio-perftest-rct
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: perftest-client
+  namespace: default
+  labels:
+    app: gpunetio-perftest
+    role: client
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: cobalt04
+  containers:
+    - name: perftest
+      image: nvcr.io/nvidia/doca/doca:devel-cuda13.0.0-3.4.0-devel-host
+      command: ["sleep", "infinity"]
+      securityContext:
+        capabilities:
+          add:
+            - IPC_LOCK
+      resources:
+        claims:
+          - name: gpu
+          - name: rdma-nic
+      env:
+        - name: LD_LIBRARY_PATH
+          value: "/usr/mpi/gcc/openmpi-current/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64"
+  resourceClaims:
+    - name: gpu
+      resourceClaimName: perftest-client-gpu
+    - name: rdma-nic
+      resourceClaimTemplateName: gpunetio-perftest-rct
