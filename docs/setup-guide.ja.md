@@ -659,8 +659,39 @@ IFACE=$(ls /sys/class/infiniband/${RDMA_DEV}/device/net/ | head -1)
 # 作成可能なVFの数を確認する
 cat /sys/class/net/${IFACE}/device/sriov_totalvfs
 
+# VF を作成するスクリプトを置く（2-1-7 の systemd サービスからも同じものを呼ぶ）
+# VF ごとに MAC を設定してから、VF をドライバに結びつける（理由は下の注）
+cat <<'EOF' | sudo tee /usr/local/sbin/sriov-vf-create.sh
+#!/bin/bash
+# 使い方: sriov-vf-create.sh <PF のインタフェース名> <VF の数>
+set -euo pipefail
+PF=$1
+NUMVFS=$2
+D=/sys/class/net/${PF}/device
+
+# 既存の VF を消す（作り直すときのため）
+echo 0 > ${D}/sriov_numvfs
+# VF を作っても、ドライバに自動で結びつけない
+echo 0 > ${D}/sriov_drivers_autoprobe
+echo ${NUMVFS} > ${D}/sriov_numvfs
+
+# VF の MAC = 02:<PF の MAC の下位 3 バイト>:00:<VF 番号>（ノード・ポート・VF ごとに一意）
+IFS=: read -ra M < /sys/class/net/${PF}/address
+for ((n = 0; n < NUMVFS; n++)); do
+  ip link set ${PF} vf ${n} mac $(printf '02:%s:%s:%s:00:%02x' ${M[3]} ${M[4]} ${M[5]} ${n})
+done
+
+# 0 のままだと手での bind も断られるので、bind の前に 1 に戻す
+echo 1 > ${D}/sriov_drivers_autoprobe
+for ((n = 0; n < NUMVFS; n++)); do
+  basename $(readlink ${D}/virtfn${n}) > /sys/bus/pci/drivers/mlx5_core/bind
+done
+EOF
+sudo chmod +x /usr/local/sbin/sriov-vf-create.sh
+
 # VF を作成（2 つあれば E2E テストに十分 — vertex Pod ごとに 1 つ）
-sudo sh -c "echo 2 > /sys/class/net/${IFACE}/device/sriov_numvfs"
+# 既存の VF は消して作り直すので、VF を使っている Pod があれば先に消しておく
+sudo /usr/local/sbin/sriov-vf-create.sh ${IFACE} 2
 
 
 # VF が作成されたことを確認
@@ -670,13 +701,26 @@ ip link show | grep -E 'vf '
 # VF の PCI デバイスが見えることを確認
 lspci | grep -i 'virtual function'
 # 期待値: VF ごとに 1 行（例: "04:00.2 ... Virtual Function"）
+
+# VF の RDMA デバイスの node GUID が 0 でないことを確認
+cat /sys/class/net/${IFACE}/device/virtfn*/infiniband/*/node_guid
+# 期待値: VF ごとに 1 行。0000:0000:0000:0000 ではなく、VF ごとに違う値
+#   （例: MAC 02:8a:04:e6:00:00 の VF なら 028a:04ff:fee6:0000）
 ```
+
+> **注：MAC を設定してから VF をドライバに結びつける理由**
+> - VF の node GUID（RDMA デバイスの識別子）は、PF の側で VF の MAC を設定したときに、NIC が MAC から作ります（MAC の前半 3 バイトと後半 3 バイトの間に `ff:fe` が入る）。MAC を一度も設定していない VF の GUID は `0` です。
+> - VF の RDMA デバイスは、VF がドライバ（mlx5_core）に結びついたときに GUID を 1 回だけ読み、その後は読み直しません。
+> - `sriov_numvfs` に書くだけだと、VF は作った直後にドライバに結びつきます。そのため GUID は `0` のままになり、Pod の中の RDMA CM（librdmacm）が VF を「デバイスなし」と扱って、CM モードの接続が失敗します。
+> - `sriov_drivers_autoprobe` を 0 にすると、自動の結びつけだけでなく、**手での bind も `No such device` で断られます**。そのため、スクリプトでは bind の前に 1 に戻しています。1 に戻しても、すでにある VF が勝手に結びつくことはありません。
+> - InfiniBand モードの VF では、MAC から GUID は作られません（`ip link set <PF> vf <N> node_guid ...` で設定します）。この手順で確認したのは Ethernet（RoCE）モードだけです。
 
 gpu-direct ワークロードを実行するすべてのワーカーノードで同じ操作を繰り返してください。
 
 ##### 2-1-7. VF 作成の再起動後の永続化
 
-永続化しないと、再起動時に VF は消えます。各ワーカーノードで systemd の oneshot サービスを作成してください：
+永続化しないと、再起動時に VF は消えます。各ワーカーノードで systemd の oneshot サービスを作成してください。
+VF は 2-1-6 のスクリプト（`/usr/local/sbin/sriov-vf-create.sh`）で作ります。`sriov_numvfs` に直接書くと、node GUID が `0` の VF ができます（2-1-6 の注）：
 
 ```bash
 cat <<EOF | sudo tee /etc/systemd/system/sriov-vf@.service
@@ -687,7 +731,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c 'echo 2 > /sys/class/net/%i/device/sriov_numvfs'
+ExecStart=/usr/local/sbin/sriov-vf-create.sh %i 2
 RemainAfterExit=yes
 
 [Install]
