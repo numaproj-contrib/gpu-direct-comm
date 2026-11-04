@@ -15,8 +15,8 @@ set -u
 # that silently reverted.
 #
 # Run this ON the node itself (not from the control plane):
-#   ./verify-baremetal-env.sh
-#   ssh cobalt04 'bash -s' < gpunetio-feasibility/verify-baremetal-env.sh
+#   ./verify-gpunetio-baremetal-env.sh
+#   ssh cobalt04 'bash -s' < gpunetio-feasibility/verify-gpunetio-baremetal-env.sh
 #
 # Exit code: 0 if all checks pass, 1 if any check fails.
 #

@@ -1,0 +1,28 @@
+Remove the duplicate doca_mmap_set_memrange() call in create_mmap()
+
+create_mmap() sets the memory range in one of two branches:
+doca_mmap_set_dmabuf_memrange() when doca_gpu_dmabuf_fd() succeeds, or
+doca_mmap_set_memrange() (nvidia-peermem) when it fails. It then calls
+doca_mmap_set_memrange() again outside the branches. doca_mmap.h documents
+both setters as "can be done only once", and the second call fails with
+"Mmap memory range address can only be set once" (DOCA_ERROR_NOT_PERMITTED),
+so create_mmap() returns an error without logging it.
+
+Reported upstream: https://github.com/NVIDIA-DOCA/doca-samples/issues/7
+Unchanged in DOCA 3.0.0 to 3.5.0.
+
+Apply in samples/doca_gpunetio/ with: patch -p1
+
+--- a/rdma_common.c
++++ b/rdma_common.c
+@@ -603,10 +603,6 @@
+ 		}
+ 	}
+
+-	result = doca_mmap_set_memrange(mmap_obj->mmap, mmap_obj->memrange_addr, mmap_obj->memrange_len);
+-	if (result != DOCA_SUCCESS)
+-		goto error;
+-
+ 	result = doca_mmap_add_dev(mmap_obj->mmap, mmap_obj->doca_device);
+ 	if (result != DOCA_SUCCESS)
+ 		goto error;

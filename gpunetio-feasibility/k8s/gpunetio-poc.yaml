@@ -1,46 +1,51 @@
-# GPUNetIO Feasibility PoC — Server + Client Pod manifests
+# DOCA sample on DRA — server + client Pod manifests for milestone G3-M1-3.
 #
-# Each Pod requests:
-#   - 1x GPU via NVIDIA DRA driver (gpu.nvidia.com)
-#   - 1x RDMA NIC (SR-IOV VF) via DRANET (dra.net)
+# Runs the official gpunetio_rdma_client_server_write sample between two Pods.
+# The wiring is identical to perftest-dra.yaml (M1-2); only the image differs.
+#
+# Each Pod receives:
+#   - 1x GPU             via nvidia-dra-driver-gpu (DeviceClass gpu.nvidia.com)
+#   - 1x RDMA SR-IOV VF  via the ResourceClaimTemplate the NumaNetwork
+#                        controller generates (gpunetio-sample-rct)
+#   - an IP on that VF   via dranet BYODP -> webhook-whereabouts-numanetwork
+#                        -> whereabouts, resolved from the ipRange below
+#
+# The containers idle on `sleep infinity`: the sample is started by
+# `kubectl exec`, so that the client can be given the server's VF IP after the
+# server is up, and a failed run leaves the Pod in place for investigation.
 #
 # Prerequisites:
-#   - DeviceClass gpu.nvidia.com (installed by nvidia-dra-driver-gpu Helm chart)
-#   - nvidia-peermem kernel module loaded on nodes
-#   - Container image pushed to Harbor registry
+#   - the image is pushed to Harbor (GPUNETIO_RDMA_WRITE_SAMPLE_GUIDE.md 6.1)
+#   - the perftest-dra.yaml Pods are deleted: each node has one GPU
 #
 # Usage:
-#   # Step 1: Deploy server first
-#   kubectl apply -f poc/gpunetio-feasibility/k8s/gpunetio-poc.yaml
-#   kubectl wait --for=condition=Ready pod/gpunetio-server --timeout=120s
+#   kubectl apply -f gpunetio-feasibility/k8s/gpunetio-poc.yaml
+#   kubectl wait --for=condition=Ready pod/gpunetio-server pod/gpunetio-client --timeout=600s
 #
-#   # Step 2: Get server RDMA IP and update client's SERVER_IP env
-#   kubectl exec gpunetio-server -- ip addr show
-#
-#   # Step 3: Deploy client (edit SERVER_IP first)
-#   kubectl logs gpunetio-server -f
-#   kubectl logs gpunetio-client -f
+# Steps after this point are documented in GPUNETIO_RDMA_WRITE_SAMPLE_GUIDE.md chapter 6
+# in the knowledge base.
 ---
-# RDMA NIC DeviceClass: selects SR-IOV VFs with RDMA capability.
-# VFs are identified by rdma=true (RDMA capable) and sriov=false
-# (VFs themselves don't have SR-IOV capability; only PFs do).
-apiVersion: resource.k8s.io/v1
-kind: DeviceClass
+# Same refDeviceClass and ipRange as perftest-dra.yaml. whereabouts keeps one
+# IPPool per range (192.168.140.0-24), so reusing the range does not hand out
+# an address that another NumaNetwork already holds.
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: NumaNetwork
 metadata:
-  name: gpunetio-poc-rdma-vf
+  name: gpunetio-sample
+  namespace: default
 spec:
-  selectors:
-    - cel:
-        expression: >
-          device.driver == "dra.net" &&
-          device.attributes["dra.net"].rdma == true &&
-          device.attributes["dra.net"].sriov == false
+  refDeviceClass:
+    name: dranet-e2e-baremetal
+  refResourceClaimDranet:
+    ipRange: "192.168.140.0/24"
 ---
-# GPU ResourceClaim for server
+# GPU claims are per Pod: a ResourceClaim is reserved by the first Pod that
+# consumes it, so server and client cannot share one.
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
   name: gpunetio-server-gpu
+  namespace: default
 spec:
   devices:
     requests:
@@ -48,113 +53,94 @@ spec:
         exactly:
           deviceClassName: gpu.nvidia.com
 ---
-# RDMA NIC ResourceClaim for server
-apiVersion: resource.k8s.io/v1
-kind: ResourceClaim
-metadata:
-  name: gpunetio-server-rdma
-spec:
-  devices:
-    requests:
-      - name: rdma-nic
-        exactly:
-          deviceClassName: gpunetio-poc-rdma-vf
----
-# GPU ResourceClaim for client
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
   name: gpunetio-client-gpu
+  namespace: default
 spec:
   devices:
     requests:
       - name: gpu
         exactly:
           deviceClassName: gpu.nvidia.com
----
-# RDMA NIC ResourceClaim for client
-apiVersion: resource.k8s.io/v1
-kind: ResourceClaim
-metadata:
-  name: gpunetio-client-rdma
-spec:
-  devices:
-    requests:
-      - name: rdma-nic
-        exactly:
-          deviceClassName: gpunetio-poc-rdma-vf
 ---
 apiVersion: v1
 kind: Pod
 metadata:
   name: gpunetio-server
+  namespace: default
   labels:
-    app: gpunetio-poc
+    app: gpunetio-sample
     role: server
 spec:
-  restartPolicy: Never
+  # nodeSelector, not nodeName: DRA allocation is performed by the scheduler.
+  # Same direction as M1-2 (client cobalt04 -> server cobalt06).
+  nodeSelector:
+    kubernetes.io/hostname: cobalt06
   containers:
     - name: gpunetio
       image: 192.168.21.17:30003/gpu-direct-comm/gpunetio-poc:latest
-      # Server mode (default): waits for client connection.
-      # -d and -gpu are auto-detected via the init script (see command).
-      # For manual override, set IB_DEVICE and GPU_PCIE_ADDR env vars.
-      command: ["/bin/bash", "-c"]
-      args:
-        - |
-          IB_DEV=${IB_DEVICE:-$(ibv_devinfo 2>/dev/null | grep hca_id | head -1 | awk '{print $2}')}
-          GPU_ADDR=${GPU_PCIE_ADDR:-$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader 2>/dev/null | head -1 | sed 's/0000://')}
-          echo "Using IB device: ${IB_DEV}, GPU PCIe: ${GPU_ADDR}"
-          exec gpunetio_rdma_write -d "${IB_DEV}" -gpu "${GPU_ADDR}" --use-rdma-cm
+      # Overrides the image ENTRYPOINT (gpunetio_rdma_write).
+      command: ["sleep", "infinity"]
       securityContext:
         capabilities:
           add:
+            # RDMA pins its memory regions; without IPC_LOCK the memlock limit
+            # makes memory registration fail.
             - IPC_LOCK
+            # CRI-O does not grant NET_RAW by default. ping carries the file
+            # capability cap_net_raw=ep, so without it the kernel refuses to
+            # exec ping at all.
+            - NET_RAW
       resources:
         claims:
           - name: gpu
           - name: rdma-nic
+      env:
+        # Drops /usr/local/cuda-13/compat from the image default; see
+        # GPUNETIO_K8S_POD_EXECUTION_TEST.md 3-1.
+        # Appends the GDRCopy library path (libgdrapi.so, built into the
+        # image), as GPUNetIO "Installation and Setup" does with
+        # LD_LIBRARY_PATH.
+        - name: LD_LIBRARY_PATH
+          value: "/usr/mpi/gcc/openmpi-current/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/opt/mellanox/gdrcopy/src"
   resourceClaims:
     - name: gpu
       resourceClaimName: gpunetio-server-gpu
+    # The template mints one claim per Pod: each Pod gets its own VF and IP.
     - name: rdma-nic
-      resourceClaimName: gpunetio-server-rdma
+      resourceClaimTemplateName: gpunetio-sample-rct
 ---
 apiVersion: v1
 kind: Pod
 metadata:
   name: gpunetio-client
+  namespace: default
   labels:
-    app: gpunetio-poc
+    app: gpunetio-sample
     role: client
 spec:
-  restartPolicy: Never
+  nodeSelector:
+    kubernetes.io/hostname: cobalt04
   containers:
     - name: gpunetio
       image: 192.168.21.17:30003/gpu-direct-comm/gpunetio-poc:latest
-      command: ["/bin/bash", "-c"]
-      args:
-        - |
-          IB_DEV=${IB_DEVICE:-$(ibv_devinfo 2>/dev/null | grep hca_id | head -1 | awk '{print $2}')}
-          GPU_ADDR=${GPU_PCIE_ADDR:-$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader 2>/dev/null | head -1 | sed 's/0000://')}
-          echo "Using IB device: ${IB_DEV}, GPU PCIe: ${GPU_ADDR}"
-          exec gpunetio_rdma_write -d "${IB_DEV}" -gpu "${GPU_ADDR}" --use-rdma-cm -c "${SERVER_IP}"
-      env:
-        # Set to the server Pod's RDMA NIC IP address.
-        # After server Pod is Running:
-        #   kubectl exec gpunetio-server -- ip addr show
-        - name: SERVER_IP
-          value: "REPLACE_WITH_SERVER_RDMA_IP"
+      command: ["sleep", "infinity"]
       securityContext:
         capabilities:
           add:
             - IPC_LOCK
+            - NET_RAW
       resources:
         claims:
           - name: gpu
           - name: rdma-nic
+      env:
+        - name: LD_LIBRARY_PATH
+          value: "/usr/mpi/gcc/openmpi-current/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/opt/mellanox/gdrcopy/src"
   resourceClaims:
     - name: gpu
       resourceClaimName: gpunetio-client-gpu
     - name: rdma-nic
-      resourceClaimName: gpunetio-client-rdma
+      resourceClaimTemplateName: gpunetio-sample-rct
